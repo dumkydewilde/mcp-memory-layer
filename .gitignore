@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+.context/
+data/jaffle_shop/
+*.duckdb
+*.duckdb.wal
+eval/results/*.json
+.ruff_cache/

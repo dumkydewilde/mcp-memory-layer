@@ -1,0 +1,1102 @@
+# Evaluation questions for MCP memory layer experiment
+# Based on jaffle_shop v3 schema (dbt-labs/jaffle-shop)
+#
+# Schema overview:
+#   Raw: raw_customers, raw_orders (amounts in CENTS), raw_items, raw_products, raw_stores, raw_supplies
+#   Staging: stg_customers, stg_orders (amounts in DOLLARS + _cents cols), stg_order_items, stg_products, stg_locations, stg_supplies
+#   Marts: customers, orders, order_items, products, locations, supplies
+
+# =============================================================================
+# A. CORRECTIONS (C01-C20)
+# Test whether pre-seeded corrections prevent known mistakes
+# =============================================================================
+
+- id: "C01"
+  question: "What's the total revenue across all orders?"
+  target_features: [corrections]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [order_total]
+    filters: []
+    join_keys: []
+    notes: "Must NOT use raw_orders (cents). orders.order_total is in dollars."
+  trap: "raw_orders.order_total is in cents, not dollars"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C02"
+  question: "What is the average order subtotal before tax?"
+  target_features: [corrections]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [subtotal]
+    filters: []
+    join_keys: []
+    notes: "Use orders.subtotal (dollars), not raw_orders.subtotal (cents)."
+  trap: "raw_orders.subtotal is in cents"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C03"
+  question: "Find all orders for customer 3 from the raw data"
+  target_features: [corrections]
+  difficulty: medium
+  expected:
+    tables: [raw_orders]
+    columns: [customer]
+    filters: ["customer = 3"]
+    join_keys: []
+    notes: "raw_orders uses 'customer', NOT 'customer_id'."
+  trap: "Using customer_id instead of customer on raw_orders"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 1
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C04"
+  question: "How many returning customers do we have?"
+  target_features: [corrections]
+  difficulty: medium
+  expected:
+    tables: [customers]
+    columns: [customer_type]
+    filters: ["customer_type = 'returning'"]
+    join_keys: []
+    notes: "customer_type values are 'new' and 'returning'. Must use exact strings."
+  trap: "Using wrong values like 'repeat', 'existing', or 'return'"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 1
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C05"
+  question: "What's the total tax collected across all orders?"
+  target_features: [corrections]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [tax_paid]
+    filters: []
+    join_keys: []
+    notes: "Use orders.tax_paid or stg_orders.tax_paid (dollars). NOT raw_orders.tax_paid (cents)."
+  trap: "raw_orders.tax_paid is in cents"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C06"
+  question: "Which orders contain food items?"
+  target_features: [corrections]
+  difficulty: easy
+  expected:
+    tables: [orders]
+    columns: [is_food_order]
+    filters: ["is_food_order = true"]
+    join_keys: []
+    notes: "orders.is_food_order is a boolean. Don't need to join to products."
+  trap: "Joining to order_items and products to check is_food_item when orders already has is_food_order"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 1
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C07"
+  question: "What is the profit margin per order item?"
+  target_features: [corrections]
+  difficulty: hard
+  expected:
+    tables: [order_items]
+    columns: [product_price, supply_cost]
+    filters: []
+    join_keys: []
+    notes: "Margin = product_price - supply_cost. Both on order_items mart, not raw_items."
+  trap: "raw_items has no price or cost columns. These come from product and supply joins in the mart."
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C08"
+  question: "What is each customer's total lifetime spending?"
+  target_features: [corrections]
+  difficulty: easy
+  expected:
+    tables: [customers]
+    columns: [lifetime_spend]
+    filters: []
+    join_keys: []
+    notes: "customers.lifetime_spend is pre-computed. No need to aggregate from orders."
+  trap: "Re-aggregating from orders when customers already has lifetime_spend"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C09"
+  question: "Show me the difference between order_total and subtotal"
+  target_features: [corrections]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [order_total, subtotal, tax_paid]
+    filters: []
+    join_keys: []
+    notes: "order_total = subtotal + tax_paid. This is validated by a dbt test."
+  trap: "Not knowing that order_total includes tax and subtotal doesn't"
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C10"
+  question: "Find the product ID for items in order 5 from raw data"
+  target_features: [corrections]
+  difficulty: medium
+  expected:
+    tables: [raw_items]
+    columns: [sku]
+    filters: ["order_id = 5"]
+    join_keys: []
+    notes: "raw_items uses 'sku', not 'product_id'. Staging renames it."
+  trap: "Using product_id on raw_items where the column is actually called sku"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 1
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C11"
+  question: "Which customer's first order was most recent?"
+  target_features: [corrections]
+  difficulty: medium
+  expected:
+    tables: [customers]
+    columns: [first_ordered_at]
+    filters: []
+    join_keys: []
+    notes: "customers.first_ordered_at is pre-computed. Order by it DESC."
+  trap: "Joining to orders and computing MIN(ordered_at) per customer"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C12"
+  question: "How many first-time orders were there?"
+  target_features: [corrections]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [customer_order_number]
+    filters: ["customer_order_number = 1"]
+    join_keys: []
+    notes: "orders.customer_order_number = 1 identifies first orders."
+  trap: "Not knowing customer_order_number exists and trying a complex window function"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 1
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C13"
+  question: "What's the supply cost vs product price breakdown for each order?"
+  target_features: [corrections]
+  difficulty: hard
+  expected:
+    tables: [orders]
+    columns: [order_cost, order_items_subtotal]
+    filters: []
+    join_keys: []
+    notes: "orders.order_cost = sum of supply costs, order_items_subtotal = sum of product prices."
+  trap: "Trying to compute from order_items when orders already has the aggregates"
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C14"
+  question: "Show total revenue from raw_orders in dollars"
+  target_features: [corrections]
+  difficulty: hard
+  expected:
+    tables: [raw_orders]
+    columns: [order_total]
+    filters: []
+    join_keys: []
+    notes: "Must divide by 100 since raw_orders.order_total is in cents."
+  trap: "Not dividing by 100, returning cents as if they were dollars"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 4
+
+- id: "C15"
+  question: "How many drink items vs food items were ordered?"
+  target_features: [corrections]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [count_food_items, count_drink_items]
+    filters: []
+    join_keys: []
+    notes: "orders has count_food_items and count_drink_items pre-computed."
+  trap: "Joining to order_items and products to count when orders already has the counts"
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C16"
+  question: "Join raw_orders to raw_customers to get customer names with order totals"
+  target_features: [corrections]
+  difficulty: hard
+  expected:
+    tables: [raw_orders, raw_customers]
+    columns: [customer, id, order_total]
+    filters: []
+    join_keys: ["raw_orders.customer = raw_customers.id"]
+    notes: "raw_orders.customer joins to raw_customers.id. NOT customer_id."
+  trap: "Using customer_id as join key (doesn't exist in raw tables)"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 2
+    avoids_trap: 3
+
+- id: "C17"
+  question: "What is the relationship between order_total and order_items_subtotal in orders?"
+  target_features: [corrections]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [order_total, order_items_subtotal, subtotal, tax_paid]
+    filters: []
+    join_keys: []
+    notes: "order_items_subtotal = subtotal (validated by dbt test). order_total = subtotal + tax_paid."
+  trap: "Assuming order_total equals order_items_subtotal without considering tax"
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C18"
+  question: "Which location has the most orders?"
+  target_features: [corrections]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [location_id]
+    filters: []
+    join_keys: []
+    notes: "orders has location_id. May need to join to locations for name."
+  trap: "Looking for store_id (raw name) instead of location_id (renamed in staging)"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C19"
+  question: "List all perishable supplies with their costs"
+  target_features: [corrections]
+  difficulty: medium
+  expected:
+    tables: [supplies]
+    columns: [is_perishable_supply, supply_cost]
+    filters: ["is_perishable_supply = true"]
+    join_keys: []
+    notes: "Use supplies mart. stg_supplies has is_perishable_supply. raw_supplies uses 'perishable'."
+  trap: "Using raw_supplies where column is 'perishable' not 'is_perishable_supply'"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 1
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "C20"
+  question: "What cents values does stg_orders preserve from raw_orders?"
+  target_features: [corrections]
+  difficulty: hard
+  expected:
+    tables: [stg_orders]
+    columns: [subtotal_cents, tax_paid_cents, order_total_cents]
+    filters: []
+    join_keys: []
+    notes: "stg_orders keeps both dollar and _cents columns."
+  trap: "Not knowing that stg_orders preserves the original cents values alongside dollar conversions"
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+# =============================================================================
+# B. DBT MANIFEST (D01-D20)
+# Test whether model descriptions, column docs, and lineage help
+# =============================================================================
+
+- id: "D01"
+  question: "What columns does the customers mart model contain?"
+  target_features: [dbt_manifest]
+  difficulty: easy
+  expected:
+    tables: [customers]
+    columns: [customer_id, customer_name, count_lifetime_orders, first_ordered_at, last_ordered_at, lifetime_spend_pretax, lifetime_tax_paid, lifetime_spend, customer_type]
+    filters: []
+    join_keys: []
+    notes: "Should list all columns from the dbt manifest for the customers model."
+  trap: "Confusing raw_customers columns with the customers mart columns"
+  scoring:
+    correct_table: 1
+    correct_column: 3
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "D02"
+  question: "How is lifetime_spend calculated in the customers model?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [customers, orders]
+    columns: [lifetime_spend, order_total, customer_id]
+    filters: []
+    join_keys: [customer_id]
+    notes: "Trace lineage: SUM(orders.order_total) grouped by customer_id."
+  trap: "Without manifest, may guess it's a simple column rather than a derived aggregation"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 1
+    avoids_trap: 2
+
+- id: "D03"
+  question: "What upstream models does the orders mart depend on?"
+  target_features: [dbt_manifest]
+  difficulty: easy
+  expected:
+    tables: [orders, stg_orders, order_items]
+    columns: []
+    filters: []
+    join_keys: []
+    notes: "Manifest lineage: orders depends on stg_orders and order_items."
+  trap: "Listing raw tables as direct dependencies instead of staging/intermediate models"
+  scoring:
+    correct_table: 3
+    correct_column: 0
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "D04"
+  question: "What does the stg_orders model do?"
+  target_features: [dbt_manifest]
+  difficulty: easy
+  expected:
+    tables: [stg_orders]
+    columns: [order_id, customer_id, location_id, subtotal, tax_paid, order_total, ordered_at]
+    filters: []
+    join_keys: []
+    notes: "Renames columns from raw_orders and converts cents to dollars."
+  trap: "Describing the orders mart instead of the staging model"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "D05"
+  question: "What data tests exist on the orders model?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [order_id, customer_id, order_items_subtotal, subtotal, order_total, tax_paid]
+    filters: []
+    join_keys: []
+    notes: "Tests: not_null/unique on order_id, relationship on customer_id, expression tests on amounts."
+  trap: "Missing the expression_is_true tests on amount relationships"
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "D06"
+  question: "What is the grain of the order_items model?"
+  target_features: [dbt_manifest]
+  difficulty: easy
+  expected:
+    tables: [order_items]
+    columns: [order_item_id]
+    filters: []
+    join_keys: []
+    notes: "One row per order item. order_item_id is the unique key."
+  trap: "Confusing with order grain — one order can have multiple items"
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "D07"
+  question: "How does data flow from raw_orders to the orders mart?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [raw_orders, stg_orders, order_items, orders]
+    columns: []
+    filters: []
+    join_keys: []
+    notes: "Lineage: raw_orders → stg_orders (rename + cents_to_dollars) → orders (join with order_items summary)."
+  trap: "Skipping the staging layer or showing wrong transformation steps"
+  scoring:
+    correct_table: 3
+    correct_column: 0
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "D08"
+  question: "What transformations happen in stg_orders?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [stg_orders, raw_orders]
+    columns: [subtotal, subtotal_cents, order_id, customer_id, location_id]
+    filters: []
+    join_keys: []
+    notes: "Renames: id→order_id, customer→customer_id, store_id→location_id. Converts cents to dollars via macro."
+  trap: "Not mentioning the cents-to-dollars conversion is a critical omission"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "D09"
+  question: "What are the accepted values for customer_type?"
+  target_features: [dbt_manifest]
+  difficulty: easy
+  expected:
+    tables: [customers]
+    columns: [customer_type]
+    filters: []
+    join_keys: []
+    notes: "accepted_values test: 'new', 'returning'."
+  trap: "Guessing values like 'active', 'inactive', 'repeat' instead of actual tested values"
+  scoring:
+    correct_table: 1
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "D10"
+  question: "Is there a relationship test between orders and stg_customers?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [orders, stg_customers]
+    columns: [customer_id]
+    filters: []
+    join_keys: [customer_id]
+    notes: "Yes: orders.customer_id references stg_customers.customer_id."
+  trap: "Reporting the relationship as orders→customers instead of orders→stg_customers"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 1
+    avoids_trap: 2
+
+- id: "D11"
+  question: "Which model should I use to get customer names with order totals?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [customers, orders]
+    columns: [customer_name, order_total, customer_id]
+    filters: []
+    join_keys: [customer_id]
+    notes: "Join customers to orders on customer_id. Both are mart tables."
+  trap: "Using raw tables where column names differ (customer, not customer_id)"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 2
+    avoids_trap: 2
+
+- id: "D12"
+  question: "What's the difference between order_cost and order_items_subtotal in orders?"
+  target_features: [dbt_manifest]
+  difficulty: hard
+  expected:
+    tables: [orders, order_items]
+    columns: [order_cost, order_items_subtotal, supply_cost, product_price]
+    filters: []
+    join_keys: []
+    notes: "order_cost = sum of supply_cost (what it costs to make). order_items_subtotal = sum of product_price (what customer pays)."
+  trap: "Treating them as interchangeable when they represent cost vs revenue"
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "D13"
+  question: "How does the order_items mart join its source tables?"
+  target_features: [dbt_manifest]
+  difficulty: hard
+  expected:
+    tables: [order_items, stg_order_items, stg_orders, stg_products, stg_supplies]
+    columns: [order_id, product_id]
+    filters: []
+    join_keys: [order_id, product_id]
+    notes: "stg_order_items LEFT JOIN stg_orders (order_id), LEFT JOIN stg_products (product_id), LEFT JOIN supplies_summary (product_id)."
+  trap: "Missing the supplies aggregation step before joining"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 2
+    avoids_trap: 2
+
+- id: "D14"
+  question: "What materialization strategy does each staging model use?"
+  target_features: [dbt_manifest]
+  difficulty: easy
+  expected:
+    tables: [stg_customers, stg_orders, stg_order_items, stg_products, stg_locations, stg_supplies]
+    columns: []
+    filters: []
+    join_keys: []
+    notes: "All staging models are materialized as views (per dbt_project.yml config)."
+  trap: "Guessing materializations instead of reading from manifest metadata"
+  scoring:
+    correct_table: 2
+    correct_column: 0
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "D15"
+  question: "Which model renames 'sku' to 'product_id'?"
+  target_features: [dbt_manifest]
+  difficulty: easy
+  expected:
+    tables: [stg_order_items]
+    columns: [product_id]
+    filters: []
+    join_keys: []
+    notes: "stg_order_items renames raw_items.sku to product_id."
+  trap: "Guessing stg_products instead of stg_order_items"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "D16"
+  question: "What columns does the orders mart add beyond what stg_orders provides?"
+  target_features: [dbt_manifest]
+  difficulty: hard
+  expected:
+    tables: [orders, stg_orders]
+    columns: [order_cost, order_items_subtotal, count_food_items, count_drink_items, count_order_items, is_food_order, is_drink_order, customer_order_number]
+    filters: []
+    join_keys: []
+    notes: "Orders adds item counts, food/drink booleans, cost/subtotal aggregates, and customer_order_number."
+  trap: "Not recognizing the order_items summary join as the key transformation"
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "D17"
+  question: "Can I get product details from the orders model?"
+  target_features: [dbt_manifest]
+  difficulty: easy
+  expected:
+    tables: [orders, order_items]
+    columns: [product_name]
+    filters: []
+    join_keys: []
+    notes: "No — orders only has aggregated item counts. Use order_items for product details."
+  trap: "Assuming orders has product-level detail when it's at order grain"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "D18"
+  question: "What semantic model entities are defined for orders?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [order_id, location_id, customer_id]
+    filters: []
+    join_keys: []
+    notes: "Entities: order_id (primary), location (foreign, expr: location_id), customer (foreign, expr: customer_id)."
+  trap: "Not knowing about semantic model definitions in the manifest"
+  scoring:
+    correct_table: 1
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "D19"
+  question: "Which raw source tables feed into the customers mart?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [raw_customers, raw_orders, raw_items, raw_products, raw_supplies, customers]
+    columns: []
+    filters: []
+    join_keys: []
+    notes: "Full lineage: raw_customers→stg_customers, raw_orders→stg_orders→orders→customers. Also raw_items→order_items→orders."
+  trap: "Only listing raw_customers and missing that order data also feeds into customer aggregations"
+  scoring:
+    correct_table: 3
+    correct_column: 0
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "D20"
+  question: "What dbt metrics are defined on the orders model?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [order_total, order_count]
+    filters: []
+    join_keys: []
+    notes: "Metrics: order_total, orders (count), new_customer_orders, large_orders, food_orders, drink_orders."
+  trap: "Not knowing about semantic layer metrics in the manifest"
+  scoring:
+    correct_table: 1
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+# =============================================================================
+# C. POPULARITY (P01-P20)
+# Test whether popularity data helps choose the right tables and joins
+# =============================================================================
+
+- id: "P01"
+  question: "I need to analyze customer orders. Which tables should I start with?"
+  target_features: [popularity]
+  difficulty: easy
+  expected:
+    tables: [customers, orders]
+    columns: [customer_id]
+    filters: []
+    join_keys: [customer_id]
+    notes: "Popularity data surfaces customers and orders as the most-queried tables."
+  trap: "Suggesting raw tables or staging tables when mart tables are the popular choice"
+  scoring:
+    correct_table: 3
+    correct_column: 0
+    correct_filter: 0
+    correct_join: 1
+    avoids_trap: 2
+
+- id: "P02"
+  question: "What's the best way to join orders to order items?"
+  target_features: [popularity]
+  difficulty: easy
+  expected:
+    tables: [orders, order_items]
+    columns: [order_id]
+    filters: []
+    join_keys: [order_id]
+    notes: "Popularity shows order_id is the join key with high frequency."
+  trap: "Joining on product_id or using staging tables instead"
+  scoring:
+    correct_table: 2
+    correct_column: 0
+    correct_filter: 0
+    correct_join: 3
+    avoids_trap: 2
+
+- id: "P03"
+  question: "Which table is most commonly used for revenue analysis?"
+  target_features: [popularity]
+  difficulty: easy
+  expected:
+    tables: [orders]
+    columns: [order_total]
+    filters: []
+    join_keys: []
+    notes: "orders is the most queried table with order_total the most selected column."
+  trap: "Suggesting raw_orders or stg_orders when orders mart is the go-to"
+  scoring:
+    correct_table: 3
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "P04"
+  question: "How do most analysts get product-level order data?"
+  target_features: [popularity]
+  difficulty: medium
+  expected:
+    tables: [order_items, products]
+    columns: [product_id, product_name]
+    filters: []
+    join_keys: [product_id]
+    notes: "order_items LEFT JOIN products ON product_id is a common pattern."
+  trap: "Trying to get product info from orders (which only has aggregates)"
+  scoring:
+    correct_table: 2
+    correct_column: 0
+    correct_filter: 0
+    correct_join: 3
+    avoids_trap: 3
+
+- id: "P05"
+  question: "I want to count orders by customer type. Which table is best?"
+  target_features: [popularity]
+  difficulty: easy
+  expected:
+    tables: [customers, orders]
+    columns: [customer_type, customer_id]
+    filters: []
+    join_keys: [customer_id]
+    notes: "Join customers (for type) to orders (for count). Both are popular marts."
+  trap: "Looking for customer_type on orders table (it's on customers)"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 1
+    avoids_trap: 2
+
+- id: "P06"
+  question: "What columns do analysts typically SELECT from the customers table?"
+  target_features: [popularity]
+  difficulty: medium
+  expected:
+    tables: [customers]
+    columns: [customer_name, lifetime_spend, count_lifetime_orders, customer_type]
+    filters: []
+    join_keys: []
+    notes: "Popularity data shows the most frequently selected columns."
+  trap: "Listing all columns including rarely-used ones"
+  scoring:
+    correct_table: 1
+    correct_column: 3
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "P07"
+  question: "What's the typical GROUP BY when analyzing orders over time?"
+  target_features: [popularity]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [ordered_at]
+    filters: []
+    join_keys: []
+    notes: "ordered_at is the most common GROUP BY column for temporal analysis."
+  trap: "Using order_id as GROUP BY (too granular) or first_ordered_at (customer grain)"
+  scoring:
+    correct_table: 1
+    correct_column: 3
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "P08"
+  question: "Which join pattern is most frequently used in this project?"
+  target_features: [popularity]
+  difficulty: medium
+  expected:
+    tables: [orders, customers]
+    columns: [customer_id]
+    filters: []
+    join_keys: [customer_id]
+    notes: "orders JOIN customers ON customer_id is the most frequent join pattern."
+  trap: "Guessing a different join pattern"
+  scoring:
+    correct_table: 2
+    correct_column: 0
+    correct_filter: 0
+    correct_join: 3
+    avoids_trap: 2
+
+- id: "P09"
+  question: "I need a quick customer summary. What's the most efficient approach?"
+  target_features: [popularity]
+  difficulty: easy
+  expected:
+    tables: [customers]
+    columns: [customer_id, customer_name, count_lifetime_orders, lifetime_spend]
+    filters: []
+    join_keys: []
+    notes: "customers mart is the popular single-table solution — no joins needed."
+  trap: "Building a customer summary from scratch by joining multiple tables"
+  scoring:
+    correct_table: 3
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "P10"
+  question: "What columns are commonly used in WHERE clauses on orders?"
+  target_features: [popularity]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [customer_id, is_food_order]
+    filters: []
+    join_keys: []
+    notes: "Popularity should show customer_id and is_food_order as common filter columns."
+  trap: "Suggesting order_id as a common WHERE column (it's a PK, not a typical filter)"
+  scoring:
+    correct_table: 1
+    correct_column: 3
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "P11"
+  question: "Should I use stg_orders or raw_orders for a date-based report?"
+  target_features: [popularity]
+  difficulty: easy
+  expected:
+    tables: [stg_orders]
+    columns: [ordered_at]
+    filters: []
+    join_keys: []
+    notes: "Popularity shows stg_orders is queried far more often than raw_orders."
+  trap: "Suggesting raw_orders which has untransformed data"
+  scoring:
+    correct_table: 3
+    correct_column: 0
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "P12"
+  question: "How do analysts typically get order totals with customer names?"
+  target_features: [popularity]
+  difficulty: medium
+  expected:
+    tables: [customers, orders]
+    columns: [customer_name, order_total, customer_id]
+    filters: []
+    join_keys: [customer_id]
+    notes: "Popular pattern: orders JOIN customers ON customer_id."
+  trap: "Using raw tables when the mart tables are the popular pattern"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 2
+    avoids_trap: 2
+
+- id: "P13"
+  question: "What's the best way to analyze product profitability?"
+  target_features: [popularity]
+  difficulty: hard
+  expected:
+    tables: [order_items]
+    columns: [product_price, supply_cost, product_name]
+    filters: []
+    join_keys: []
+    notes: "order_items has both product_price and supply_cost. High query count."
+  trap: "Trying to join products to supplies manually when order_items already has both"
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "P14"
+  question: "What's the most common way to filter to recent orders?"
+  target_features: [popularity]
+  difficulty: easy
+  expected:
+    tables: [orders]
+    columns: [ordered_at]
+    filters: ["ordered_at >= ..."]
+    join_keys: []
+    notes: "ordered_at is the common temporal filter column on orders."
+  trap: "Using customer-level dates (first_ordered_at, last_ordered_at) for order filtering"
+  scoring:
+    correct_table: 1
+    correct_column: 2
+    correct_filter: 2
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "P15"
+  question: "Which tables are almost never queried directly?"
+  target_features: [popularity]
+  difficulty: medium
+  expected:
+    tables: [raw_customers, raw_orders, raw_items]
+    columns: []
+    filters: []
+    join_keys: []
+    notes: "Raw tables have very low query counts — analysts use staging or mart tables."
+  trap: "Listing staging tables as rarely used when they are actually common"
+  scoring:
+    correct_table: 3
+    correct_column: 0
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "P16"
+  question: "What's the recommended way to get order count and total spend per customer?"
+  target_features: [popularity]
+  difficulty: easy
+  expected:
+    tables: [customers]
+    columns: [customer_id, count_lifetime_orders, lifetime_spend]
+    filters: []
+    join_keys: []
+    notes: "customers mart already has these pre-aggregated. Most popular approach."
+  trap: "Writing a complex GROUP BY query across orders when customers has the answer"
+  scoring:
+    correct_table: 3
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "P17"
+  question: "I'm new to this project. Which three tables should I learn first?"
+  target_features: [popularity]
+  difficulty: easy
+  expected:
+    tables: [orders, customers, order_items]
+    columns: []
+    filters: []
+    join_keys: []
+    notes: "Top 3 by query count: orders, customers, order_items."
+  trap: "Suggesting raw tables or niche models instead of the most-used ones"
+  scoring:
+    correct_table: 3
+    correct_column: 0
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "P18"
+  question: "How should I join customers to product data?"
+  target_features: [popularity]
+  difficulty: hard
+  expected:
+    tables: [customers, orders, order_items]
+    columns: [customer_id, order_id, product_id]
+    filters: []
+    join_keys: [customer_id, order_id]
+    notes: "Two-hop: customers → orders (customer_id) → order_items (order_id)."
+  trap: "Attempting a direct join between customers and order_items with no FK"
+  scoring:
+    correct_table: 2
+    correct_column: 0
+    correct_filter: 0
+    correct_join: 4
+    avoids_trap: 3
+
+- id: "P19"
+  question: "I want to analyze order sizes. Should I use orders or order_items?"
+  target_features: [popularity]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [count_order_items, order_total]
+    filters: []
+    join_keys: []
+    notes: "For order-level size analysis, orders has count_order_items and order_total."
+  trap: "Using order_items when you need order-level aggregates that orders already provides"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "P20"
+  question: "What's the most popular ORDER BY column when querying the customers table?"
+  target_features: [popularity]
+  difficulty: medium
+  expected:
+    tables: [customers]
+    columns: [lifetime_spend, count_lifetime_orders]
+    filters: []
+    join_keys: []
+    notes: "Popularity shows lifetime_spend and count_lifetime_orders as common sorting columns."
+  trap: "Suggesting ORDER BY customer_id (primary key sort is rarely analytically useful)"
+  scoring:
+    correct_table: 1
+    correct_column: 3
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
