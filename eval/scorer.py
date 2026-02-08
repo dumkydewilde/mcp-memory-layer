@@ -33,18 +33,19 @@ def contains_trap_pattern(sql: str, trap: str | None) -> bool:
     sql_lower = sql.lower()
 
     # Cents trap: using raw_orders without dividing by 100
-    if "cents" in trap.lower() or "raw_orders" in trap.lower():
+    if "cents" in trap.lower():
         tables = extract_tables(sql)
         if "raw_orders" in tables:
             if "/ 100" not in sql and "/100" not in sql and "* 0.01" not in sql:
                 return True
 
-    # Column name traps
-    if "customer_id" in trap.lower() and "not customer_id" in trap.lower():
+    # Column name traps: using customer_id instead of customer on raw tables
+    trap_lower = trap.lower()
+    if "customer_id" in trap_lower and ("instead of" in trap_lower or "not customer_id" in trap_lower):
         if "customer_id" in sql_lower and "raw_orders" in sql_lower:
             return True
 
-    if "customer_id" not in trap.lower() and "customer" in trap.lower() and "raw_orders" in trap.lower():
+    if "customer_id" not in trap_lower and "customer" in trap_lower and "raw_orders" in trap_lower:
         if "customer_id" in sql_lower and "raw_orders" in sql_lower:
             return True
 

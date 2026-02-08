@@ -2,12 +2,12 @@
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
 import yaml
-from anthropic import Anthropic
 
 from eval.scorer import score_response
 
@@ -26,6 +26,194 @@ from src.mcp_memory.corrections import CorrectionsStore
 from src.mcp_memory.dbt_context import DbtManifest
 from src.mcp_memory.popularity import PopularityTracker
 
+
+# ---------------------------------------------------------------------------
+# API abstraction: Anthropic vs OpenRouter (OpenAI-compatible)
+# ---------------------------------------------------------------------------
+
+def create_client(api: str):
+    """Create an API client based on the selected backend."""
+    if api == "anthropic":
+        from anthropic import Anthropic
+        return Anthropic()
+    elif api == "openrouter":
+        from openai import OpenAI
+        return OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.environ["OPENROUTER_API_KEY"],
+        )
+    else:
+        raise ValueError(f"Unknown API backend: {api}")
+
+
+def _tools_to_openai(tools: list[dict]) -> list[dict]:
+    """Convert Anthropic-style tool defs to OpenAI function-calling format."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": t["input_schema"],
+            },
+        }
+        for t in tools
+    ]
+
+
+def _messages_to_openai(system: str, messages: list[dict]) -> list[dict]:
+    """Convert internal message format to OpenAI chat messages."""
+    oai: list[dict] = [{"role": "system", "content": system}]
+
+    for msg in messages:
+        if msg["role"] == "user":
+            content = msg["content"]
+            if isinstance(content, list):
+                # Tool results
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "tool_result":
+                        oai.append({
+                            "role": "tool",
+                            "tool_call_id": item["tool_use_id"],
+                            "content": item["content"],
+                        })
+            else:
+                oai.append({"role": "user", "content": content})
+        elif msg["role"] == "assistant":
+            content = msg["content"]
+            if isinstance(content, list):
+                text_parts = []
+                tool_calls = []
+                for block in content:
+                    if isinstance(block, dict):
+                        if block.get("type") == "text":
+                            text_parts.append(block["text"])
+                        elif block.get("type") == "tool_use":
+                            tool_calls.append({
+                                "id": block["id"],
+                                "type": "function",
+                                "function": {
+                                    "name": block["name"],
+                                    "arguments": json.dumps(block["input"]),
+                                },
+                            })
+                oai_msg: dict = {"role": "assistant"}
+                if text_parts:
+                    oai_msg["content"] = "\n".join(text_parts)
+                else:
+                    oai_msg["content"] = None
+                if tool_calls:
+                    oai_msg["tool_calls"] = tool_calls
+                oai.append(oai_msg)
+            else:
+                oai.append({"role": "assistant", "content": content})
+
+    return oai
+
+
+def call_api(client, api: str, model: str, system: str, tools: list[dict], messages: list[dict]):
+    """Make an API call and return a normalized response dict.
+
+    Returns:
+        {
+            "assistant_content": list[dict],  # internal format blocks
+            "tool_blocks": list[dict],         # {id, name, input}
+            "has_tool_use": bool,
+            "is_done": bool,
+            "input_tokens": int,
+            "output_tokens": int,
+        }
+    """
+    if api == "anthropic":
+        return _call_anthropic(client, model, system, tools, messages)
+    else:
+        return _call_openrouter(client, model, system, tools, messages)
+
+
+def _call_anthropic(client, model, system, tools, messages):
+    response = client.messages.create(
+        model=model,
+        system=system,
+        tools=tools,
+        messages=messages,
+        max_tokens=2000,
+        temperature=0,
+    )
+    assistant_content = []
+    tool_blocks = []
+    for block in response.content:
+        if block.type == "text":
+            assistant_content.append({"type": "text", "text": block.text})
+        elif block.type == "tool_use":
+            assistant_content.append({
+                "type": "tool_use",
+                "id": block.id,
+                "name": block.name,
+                "input": block.input,
+            })
+            tool_blocks.append({"id": block.id, "name": block.name, "input": block.input})
+
+    return {
+        "assistant_content": assistant_content,
+        "tool_blocks": tool_blocks,
+        "has_tool_use": bool(tool_blocks),
+        "is_done": response.stop_reason == "end_turn",
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+    }
+
+
+def _call_openrouter(client, model, system, tools, messages):
+    oai_messages = _messages_to_openai(system, messages)
+    oai_tools = _tools_to_openai(tools)
+
+    kwargs: dict = {
+        "model": model,
+        "messages": oai_messages,
+        "max_tokens": 2000,
+        "temperature": 0,
+    }
+    if oai_tools:
+        kwargs["tools"] = oai_tools
+
+    response = client.chat.completions.create(**kwargs)
+    choice = response.choices[0]
+    msg = choice.message
+
+    assistant_content = []
+    tool_blocks = []
+
+    if msg.content:
+        assistant_content.append({"type": "text", "text": msg.content})
+
+    if msg.tool_calls:
+        for tc in msg.tool_calls:
+            try:
+                tool_input = json.loads(tc.function.arguments) if tc.function.arguments else {}
+            except json.JSONDecodeError:
+                tool_input = {}
+            assistant_content.append({
+                "type": "tool_use",
+                "id": tc.id,
+                "name": tc.function.name,
+                "input": tool_input,
+            })
+            tool_blocks.append({"id": tc.id, "name": tc.function.name, "input": tool_input})
+
+    usage = response.usage
+    return {
+        "assistant_content": assistant_content,
+        "tool_blocks": tool_blocks,
+        "has_tool_use": bool(tool_blocks),
+        "is_done": choice.finish_reason == "stop",
+        "input_tokens": getattr(usage, "prompt_tokens", 0) if usage else 0,
+        "output_tokens": getattr(usage, "completion_tokens", 0) if usage else 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tool definitions and system prompt
+# ---------------------------------------------------------------------------
 
 def build_system_prompt(config: dict) -> str:
     """Build system prompt describing available tools."""
@@ -56,7 +244,7 @@ def build_system_prompt(config: dict) -> str:
 
 
 def build_tools(config: dict) -> list[dict]:
-    """Build Anthropic tool definitions based on enabled features."""
+    """Build tool definitions (Anthropic format, converted at call time for OpenRouter)."""
     tools = [
         {
             "name": "query",
@@ -129,6 +317,10 @@ def build_tools(config: dict) -> list[dict]:
     return tools
 
 
+# ---------------------------------------------------------------------------
+# Tool simulation and SQL extraction
+# ---------------------------------------------------------------------------
+
 def simulate_tool_call(
     tool_name: str,
     tool_input: dict,
@@ -154,7 +346,13 @@ def simulate_tool_call(
 
 
 def extract_sql_from_messages(messages: list) -> str | None:
-    """Extract SQL from the assistant's messages."""
+    """Extract SQL from the assistant's messages.
+
+    Checks (in priority order):
+    1. ```sql code blocks in text responses
+    2. SQL from the last `query` tool call input
+    """
+    # First pass: look for ```sql blocks in text
     for msg in reversed(messages):
         if msg["role"] != "assistant":
             continue
@@ -169,6 +367,21 @@ def extract_sql_from_messages(messages: list) -> str | None:
             sql = _extract_sql_block(content)
             if sql:
                 return sql
+
+    # Fallback: extract from the last query tool call
+    for msg in reversed(messages):
+        if msg["role"] != "assistant":
+            continue
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            for block in reversed(content):
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") == "tool_use"
+                    and block.get("name") == "query"
+                ):
+                    return block["input"].get("sql")
+
     return None
 
 
@@ -184,8 +397,13 @@ def _extract_sql_block(text: str) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Core evaluation loop
+# ---------------------------------------------------------------------------
+
 def run_question(
-    client: Anthropic,
+    client,
+    api: str,
     question: dict,
     config: dict,
     model: str,
@@ -204,56 +422,34 @@ def run_question(
 
     # Agentic loop: max 5 turns
     for _ in range(5):
-        response = client.messages.create(
-            model=model,
-            system=system,
-            tools=tools,
-            messages=messages,
-            max_tokens=2000,
-            temperature=0,
-        )
+        resp = call_api(client, api, model, system, tools, messages)
 
-        total_input_tokens += response.usage.input_tokens
-        total_output_tokens += response.usage.output_tokens
+        total_input_tokens += resp["input_tokens"]
+        total_output_tokens += resp["output_tokens"]
 
-        # Collect assistant response
-        assistant_content = []
-        has_tool_use = False
+        messages.append({"role": "assistant", "content": resp["assistant_content"]})
 
-        for block in response.content:
-            if block.type == "text":
-                assistant_content.append({"type": "text", "text": block.text})
-            elif block.type == "tool_use":
-                has_tool_use = True
-                assistant_content.append({
-                    "type": "tool_use",
-                    "id": block.id,
-                    "name": block.name,
-                    "input": block.input,
-                })
-                tool_calls.append({"name": block.name, "input": block.input})
+        for tb in resp["tool_blocks"]:
+            tool_calls.append({"name": tb["name"], "input": tb["input"]})
 
-        messages.append({"role": "assistant", "content": assistant_content})
-
-        if not has_tool_use or response.stop_reason == "end_turn":
+        if not resp["has_tool_use"] or resp["is_done"]:
             break
 
         # Execute tool calls and add results
         tool_results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                result = simulate_tool_call(
-                    block.name,
-                    block.input,
-                    corrections_store,
-                    dbt_manifest,
-                    popularity_tracker,
-                )
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result,
-                })
+        for tb in resp["tool_blocks"]:
+            result = simulate_tool_call(
+                tb["name"],
+                tb["input"],
+                corrections_store,
+                dbt_manifest,
+                popularity_tracker,
+            )
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tb["id"],
+                "content": result,
+            })
 
         messages.append({"role": "user", "content": tool_results})
 
@@ -285,13 +481,18 @@ def run_eval(
     output_path: Path,
     data_dir: Path,
     runs: int = 3,
+    limit: int = 0,
+    api: str = "anthropic",
 ) -> list[dict]:
     """Run all questions N times and save results."""
     with open(questions_path) as f:
         questions = yaml.safe_load(f)
 
+    if limit > 0:
+        questions = questions[:limit]
+
     config = CONFIGS[config_name]
-    client = Anthropic()
+    client = create_client(api)
 
     # Initialize stores based on config
     corrections_store = None
@@ -327,6 +528,7 @@ def run_eval(
             try:
                 result = run_question(
                     client,
+                    api,
                     question,
                     config,
                     model,
@@ -370,15 +572,33 @@ def main():
     parser = argparse.ArgumentParser(description="Run MCP memory layer evaluation")
     parser.add_argument("--questions", type=Path, default=Path("eval/questions.yaml"))
     parser.add_argument("--config", choices=list(CONFIGS.keys()), required=True)
-    parser.add_argument("--model", default="claude-sonnet-4-5-20250929")
+    parser.add_argument("--model", default=None)
     parser.add_argument("--output-dir", type=Path, default=Path("eval/results"))
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument("--limit", type=int, default=0, help="Limit to first N questions (0=all)")
+    parser.add_argument(
+        "--api",
+        choices=["anthropic", "openrouter"],
+        default="openrouter",
+        help="API backend (default: openrouter)",
+    )
 
     args = parser.parse_args()
+
+    # Default model depends on API backend
+    if args.model is None:
+        args.model = {
+            "anthropic": "claude-sonnet-4-5-20250929",
+            "openrouter": "anthropic/claude-sonnet-4.5",
+        }[args.api]
+
     output_path = args.output_dir / f"{args.config}.json"
 
-    run_eval(args.questions, args.config, args.model, output_path, args.data_dir, args.runs)
+    run_eval(
+        args.questions, args.config, args.model, output_path, args.data_dir,
+        args.runs, args.limit, args.api,
+    )
 
 
 if __name__ == "__main__":
