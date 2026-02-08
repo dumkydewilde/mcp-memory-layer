@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "corrections": [
+    {
+      "id": "corr_001",
+      "scope": {
+        "tables": ["raw_orders"],
+        "columns": ["subtotal", "tax_paid", "order_total"],
+        "keywords": ["revenue", "total", "sum", "cents", "dollars", "amount", "subtotal"]
+      },
+      "correction": "raw_orders amounts (subtotal, tax_paid, order_total) are stored in CENTS. Use stg_orders which converts to dollars, or divide raw values by 100. stg_orders also keeps _cents columns (subtotal_cents, tax_paid_cents, order_total_cents) if you need both.",
+      "category": "unit_conversion",
+      "created_at": "2025-02-07T10:00:00Z",
+      "source": "manual"
+    },
+    {
+      "id": "corr_002",
+      "scope": {
+        "tables": ["raw_orders"],
+        "columns": ["customer", "id", "store_id"],
+        "keywords": ["customer", "join", "orders", "customer_id", "order_id"]
+      },
+      "correction": "raw_orders uses 'customer' (not customer_id), 'id' (not order_id), and 'store_id' (not location_id). Downstream models rename these: customer→customer_id, id→order_id, store_id→location_id.",
+      "category": "naming_convention",
+      "created_at": "2025-02-07T10:00:00Z",
+      "source": "manual"
+    },
+    {
+      "id": "corr_003",
+      "scope": {
+        "tables": ["orders"],
+        "columns": ["order_total", "subtotal", "order_items_subtotal", "order_cost"],
+        "keywords": ["revenue", "total", "sum", "order value", "amount", "cost", "price"]
+      },
+      "correction": "orders has multiple amount columns: order_total (includes tax), subtotal (pre-tax), order_items_subtotal (sum of product prices), order_cost (sum of supply costs). Choose carefully based on what you need. order_total = subtotal + tax_paid.",
+      "category": "grain_disambiguation",
+      "created_at": "2025-02-07T10:00:00Z",
+      "source": "manual"
+    },
+    {
+      "id": "corr_004",
+      "scope": {
+        "tables": ["customers"],
+        "columns": ["customer_type"],
+        "keywords": ["customer type", "new customer", "returning", "repeat", "first time"]
+      },
+      "correction": "customers.customer_type is either 'new' (first order only) or 'returning' (more than one order). Use exact strings. is_repeat_buyer is a boolean in the intermediate calculation but customer_type is the final column.",
+      "category": "enum_values",
+      "created_at": "2025-02-07T10:00:00Z",
+      "source": "manual"
+    },
+    {
+      "id": "corr_005",
+      "scope": {
+        "tables": ["orders", "order_items", "products"],
+        "columns": ["is_food_order", "is_drink_order", "is_food_item", "is_drink_item"],
+        "keywords": ["food", "drink", "beverage", "menu", "item type"]
+      },
+      "correction": "Food/drink classification comes from products (is_food_item, is_drink_item). order_items inherits these. orders has is_food_order and is_drink_order booleans plus count_food_items/count_drink_items. A single order can be both food AND drink.",
+      "category": "schema_design",
+      "created_at": "2025-02-07T10:00:00Z",
+      "source": "manual"
+    },
+    {
+      "id": "corr_006",
+      "scope": {
+        "tables": ["customers"],
+        "columns": ["lifetime_spend", "lifetime_spend_pretax", "lifetime_tax_paid", "count_lifetime_orders"],
+        "keywords": ["CLV", "lifetime", "best customer", "most valuable", "lifetime value", "total spend"]
+      },
+      "correction": "customers table has pre-computed lifetime metrics: lifetime_spend (with tax), lifetime_spend_pretax, lifetime_tax_paid, count_lifetime_orders. No need to re-aggregate from orders. lifetime_spend = lifetime_spend_pretax + lifetime_tax_paid.",
+      "category": "precomputed_metric",
+      "created_at": "2025-02-07T10:00:00Z",
+      "source": "manual"
+    },
+    {
+      "id": "corr_007",
+      "scope": {
+        "tables": ["order_items", "stg_order_items"],
+        "columns": ["product_price", "supply_cost"],
+        "keywords": ["price", "cost", "margin", "profit", "product price", "supply cost"]
+      },
+      "correction": "product_price is what the customer pays per item. supply_cost is what it costs to produce. Margin = product_price - supply_cost. These are on order_items (mart), not on raw_items.",
+      "category": "grain_disambiguation",
+      "created_at": "2025-02-07T10:00:00Z",
+      "source": "manual"
+    },
+    {
+      "id": "corr_008",
+      "scope": {
+        "tables": ["customers"],
+        "columns": ["first_ordered_at", "last_ordered_at"],
+        "keywords": ["first order", "latest order", "recent order", "when did", "order date"]
+      },
+      "correction": "customers table has pre-computed first_ordered_at and last_ordered_at TIMESTAMP columns. No need to join to orders for these.",
+      "category": "precomputed_metric",
+      "created_at": "2025-02-07T10:00:00Z",
+      "source": "manual"
+    },
+    {
+      "id": "corr_009",
+      "scope": {
+        "tables": ["raw_items", "stg_order_items"],
+        "columns": ["sku", "product_id", "id", "order_item_id"],
+        "keywords": ["item", "product", "sku", "order item"]
+      },
+      "correction": "raw_items uses 'sku' for product and 'id' for item PK. stg_order_items renames: id→order_item_id, sku→product_id. Always use staging/mart column names unless querying raw directly.",
+      "category": "naming_convention",
+      "created_at": "2025-02-07T10:00:00Z",
+      "source": "manual"
+    },
+    {
+      "id": "corr_010",
+      "scope": {
+        "tables": ["orders"],
+        "columns": ["customer_order_number"],
+        "keywords": ["first order", "order number", "nth order", "repeat", "sequence"]
+      },
+      "correction": "orders.customer_order_number is a row_number() per customer ordered by date. customer_order_number=1 means first order. Use this to identify first-time vs repeat purchases at the order level.",
+      "category": "schema_design",
+      "created_at": "2025-02-07T10:00:00Z",
+      "source": "manual"
+    }
+  ]
+}

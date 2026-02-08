@@ -1,0 +1,110 @@
+"""dbt manifest parser — extracts model context for MCP tool responses."""
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+@dataclass
+class ModelContext:
+    unique_id: str
+    name: str
+    description: str
+    materialized: str
+    columns: dict[str, str]  # {col_name: description}
+    depends_on: list[str]  # upstream model names
+    raw_sql: str
+    tests: list[str] = field(default_factory=list)
+
+
+class DbtManifest:
+    """Parsed dbt manifest providing model context."""
+
+    def __init__(self, manifest_path: Path):
+        self.models: dict[str, ModelContext] = {}
+        if manifest_path.exists():
+            self._parse(manifest_path)
+
+    def _parse(self, manifest_path: Path) -> None:
+        manifest = json.loads(manifest_path.read_text())
+
+        for node_id, node in manifest.get("nodes", {}).items():
+            if node.get("resource_type") not in ("model", "seed"):
+                continue
+
+            columns = {}
+            for col_name, col_info in node.get("columns", {}).items():
+                columns[col_name] = col_info.get("description", "")
+
+            depends_on = [
+                dep.split(".")[-1]
+                for dep in node.get("depends_on", {}).get("nodes", [])
+                if dep.startswith("model.") or dep.startswith("seed.")
+            ]
+
+            raw_sql = node.get("raw_sql", node.get("raw_code", ""))
+            if len(raw_sql) > 500:
+                raw_sql = raw_sql[:500] + "\n-- [truncated]"
+
+            self.models[node["name"]] = ModelContext(
+                unique_id=node_id,
+                name=node["name"],
+                description=node.get("description", ""),
+                materialized=node.get("config", {}).get("materialized", "unknown"),
+                columns=columns,
+                depends_on=depends_on,
+                raw_sql=raw_sql,
+            )
+
+        # Attach tests to their parent models
+        for node_id, node in manifest.get("nodes", {}).items():
+            if node.get("resource_type") != "test":
+                continue
+            for dep in node.get("depends_on", {}).get("nodes", []):
+                model_name = dep.split(".")[-1]
+                if model_name in self.models:
+                    test_desc = node.get("test_metadata", {}).get("name", node.get("name", ""))
+                    self.models[model_name].tests.append(test_desc)
+
+    def get_context(self, table_name: str) -> str:
+        """Get dbt model context for a table."""
+        if table_name not in self.models:
+            close = [m for m in self.models if table_name.lower() in m.lower()]
+            if close:
+                return f"Model '{table_name}' not found. Did you mean: {', '.join(close)}?"
+            return f"Model '{table_name}' not found in dbt manifest."
+
+        model = self.models[table_name]
+        parts = [f"## {model.name} ({model.materialized})"]
+
+        if model.description:
+            parts.append(f"\n{model.description}")
+
+        if model.columns:
+            parts.append("\n### Columns")
+            for col, desc in model.columns.items():
+                parts.append(f"- **{col}**: {desc}" if desc else f"- {col}")
+
+        if model.depends_on:
+            parts.append(f"\n### Upstream: {' → '.join(model.depends_on)} → {model.name}")
+
+        if model.tests:
+            parts.append(f"\n### Tests: {', '.join(model.tests)}")
+
+        if model.raw_sql:
+            parts.append(f"\n### SQL\n```sql\n{model.raw_sql}\n```")
+
+        return "\n".join(parts)
+
+    def list_models(self) -> str:
+        """List all available dbt models with brief descriptions."""
+        if not self.models:
+            return "No dbt models loaded."
+
+        lines = ["| Model | Type | Description |", "|-------|------|-------------|"]
+        for name, model in sorted(self.models.items()):
+            desc = model.description
+            if len(desc) > 60:
+                desc = desc[:60] + "..."
+            lines.append(f"| {name} | {model.materialized} | {desc} |")
+        return "\n".join(lines)
