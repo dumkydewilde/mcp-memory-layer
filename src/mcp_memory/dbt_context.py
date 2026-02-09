@@ -22,6 +22,7 @@ class DbtManifest:
 
     def __init__(self, manifest_path: Path):
         self.models: dict[str, ModelContext] = {}
+        self._full_sql: dict[str, str] = {}  # untruncated SQL per model
         if manifest_path.exists():
             self._parse(manifest_path)
 
@@ -42,10 +43,12 @@ class DbtManifest:
                 if dep.startswith("model.") or dep.startswith("seed.")
             ]
 
-            raw_sql = node.get("raw_sql", node.get("raw_code", ""))
+            full_sql = node.get("raw_sql", node.get("raw_code", ""))
+            raw_sql = full_sql
             if len(raw_sql) > 500:
                 raw_sql = raw_sql[:500] + "\n-- [truncated]"
 
+            self._full_sql[node["name"]] = full_sql
             self.models[node["name"]] = ModelContext(
                 unique_id=node_id,
                 name=node["name"],
@@ -95,6 +98,20 @@ class DbtManifest:
             parts.append(f"\n### SQL\n```sql\n{model.raw_sql}\n```")
 
         return "\n".join(parts)
+
+    def get_model_sql(self, table_name: str) -> str:
+        """Get the full raw SQL for a dbt model."""
+        if table_name not in self.models:
+            close = [m for m in self.models if table_name.lower() in m.lower()]
+            if close:
+                return f"Model '{table_name}' not found. Did you mean: {', '.join(close)}?"
+            return f"Model '{table_name}' not found in dbt manifest."
+
+        sql = self._full_sql.get(table_name, "")
+        if not sql:
+            return f"No SQL available for '{table_name}' (may be a seed or external source)."
+
+        return f"```sql\n{sql}\n```"
 
     def list_models(self) -> str:
         """List all available dbt models with brief descriptions."""

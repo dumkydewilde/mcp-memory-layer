@@ -14,6 +14,7 @@ from eval.scorer import (
     extract_tables,
     has_correct_joins,
     score_response,
+    score_text_response,
 )
 
 
@@ -262,3 +263,71 @@ class TestScoreResponse:
         # Bad SQL: uses raw_orders without conversion
         result = score_response("SELECT order_total FROM raw_orders", expected, scoring)
         assert result["avoids_trap"] == 0
+
+
+class TestScoreTextResponse:
+    def test_none_text_returns_zeros(self):
+        expected = {"keywords": ["customer_id"], "keyword_threshold": 1}
+        scoring = {"correct_keywords": 3, "avoids_trap": 2}
+        result = score_text_response(None, expected, scoring)
+        assert result == {"correct_keywords": 0, "avoids_trap": 0}
+
+    def test_keywords_above_threshold(self):
+        expected = {
+            "keywords": ["customer_id", "customer_name", "lifetime_spend"],
+            "keyword_threshold": 2,
+        }
+        scoring = {"correct_keywords": 4, "avoids_trap": 0}
+        text = "The customers model has customer_id, customer_name, and more."
+        result = score_text_response(text, expected, scoring)
+        assert result["correct_keywords"] == 4
+
+    def test_keywords_below_threshold(self):
+        expected = {
+            "keywords": ["customer_id", "customer_name", "lifetime_spend"],
+            "keyword_threshold": 3,
+        }
+        scoring = {"correct_keywords": 4, "avoids_trap": 0}
+        text = "The model has a customer_id column."
+        result = score_text_response(text, expected, scoring)
+        assert result["correct_keywords"] == 0
+
+    def test_anti_keywords_present(self):
+        expected = {
+            "keywords": ["new", "returning"],
+            "keyword_threshold": 2,
+            "anti_keywords": ["active", "inactive"],
+        }
+        scoring = {"correct_keywords": 2, "avoids_trap": 3}
+        text = "The values are new, returning, and active."
+        result = score_text_response(text, expected, scoring)
+        assert result["correct_keywords"] == 2  # keywords pass
+        assert result["avoids_trap"] == 0  # anti-keyword "active" found
+
+    def test_anti_keywords_absent(self):
+        expected = {
+            "keywords": ["new", "returning"],
+            "keyword_threshold": 2,
+            "anti_keywords": ["active", "inactive"],
+        }
+        scoring = {"correct_keywords": 2, "avoids_trap": 3}
+        text = "The accepted values are 'new' and 'returning'."
+        result = score_text_response(text, expected, scoring)
+        assert result["correct_keywords"] == 2
+        assert result["avoids_trap"] == 3
+
+    def test_no_keywords_defined(self):
+        expected = {"keyword_threshold": 1}
+        scoring = {"correct_keywords": 3, "avoids_trap": 0}
+        result = score_text_response("some text", expected, scoring)
+        assert result["correct_keywords"] == 3  # defaults to full score
+
+    def test_case_insensitive(self):
+        expected = {
+            "keywords": ["Customer_ID", "LIFETIME_SPEND"],
+            "keyword_threshold": 2,
+        }
+        scoring = {"correct_keywords": 4, "avoids_trap": 0}
+        text = "customer_id and lifetime_spend are key columns."
+        result = score_text_response(text, expected, scoring)
+        assert result["correct_keywords"] == 4

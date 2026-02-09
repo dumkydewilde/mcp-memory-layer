@@ -13,7 +13,7 @@ from .popularity import PopularityTracker
 # Configuration from environment
 DATA_DIR = Path(os.environ.get("MCP_MEMORY_DATA_DIR", "data"))
 DUCKDB_PATH = Path(os.environ.get("MCP_MEMORY_DUCKDB_PATH", DATA_DIR / "jaffle_shop" / "jaffle_shop.duckdb"))
-MANIFEST_PATH = Path(os.environ.get("MCP_MEMORY_MANIFEST_PATH", DATA_DIR / "jaffle_shop" / "target" / "manifest.json"))
+MANIFEST_PATH = Path(os.environ.get("MCP_MEMORY_MANIFEST_PATH", Path(__file__).parent.parent.parent / "dbt_project" / "target" / "manifest.json"))
 CORRECTIONS_PATH = Path(os.environ.get("MCP_MEMORY_CORRECTIONS_PATH", DATA_DIR / "corrections.json"))
 POPULARITY_DB_PATH = Path(os.environ.get("MCP_MEMORY_POPULARITY_DB", DATA_DIR / "popularity.duckdb"))
 POPULARITY_SEED_PATH = Path(os.environ.get("MCP_MEMORY_POPULARITY_SEED", DATA_DIR / "popularity_seed.sql"))
@@ -149,6 +149,21 @@ if ENABLE_DBT and dbt_manifest:
             Formatted context about the model, or suggestions if not found.
         """
         return dbt_manifest.get_context(table_name)
+
+    @mcp.tool()
+    def get_model_sql(table_name: str) -> str:
+        """Get the full raw SQL for a dbt model.
+
+        Use this when you need to understand the exact transformations, column
+        renames, CASE statements, or business logic in a model's SQL.
+
+        Args:
+            table_name: Name of the model to get SQL for.
+
+        Returns:
+            The complete SQL source code of the model.
+        """
+        return dbt_manifest.get_model_sql(table_name)
 
     @mcp.tool()
     def list_dbt_models() -> str:

@@ -33,18 +33,19 @@ def contains_trap_pattern(sql: str, trap: str | None) -> bool:
     sql_lower = sql.lower()
 
     # Cents trap: using raw_orders without dividing by 100
-    if "cents" in trap.lower() or "raw_orders" in trap.lower():
+    if "cents" in trap.lower():
         tables = extract_tables(sql)
         if "raw_orders" in tables:
             if "/ 100" not in sql and "/100" not in sql and "* 0.01" not in sql:
                 return True
 
-    # Column name traps
-    if "customer_id" in trap.lower() and "not customer_id" in trap.lower():
+    # Column name traps: using customer_id instead of customer on raw tables
+    trap_lower = trap.lower()
+    if "customer_id" in trap_lower and ("instead of" in trap_lower or "not customer_id" in trap_lower):
         if "customer_id" in sql_lower and "raw_orders" in sql_lower:
             return True
 
-    if "customer_id" not in trap.lower() and "customer" in trap.lower() and "raw_orders" in trap.lower():
+    if "customer_id" not in trap_lower and "customer" in trap_lower and "raw_orders" in trap_lower:
         if "customer_id" in sql_lower and "raw_orders" in sql_lower:
             return True
 
@@ -68,6 +69,22 @@ def contains_trap_pattern(sql: str, trap: str | None) -> bool:
         if len(tables) > 1 and "join" in sql_lower:
             # Check if any expected table alone would suffice
             return True
+
+    # Dead-end table trap: using non-dbt tables that exist in DB but aren't managed
+    if "dead-end" in trap_lower or "not in dbt" in trap_lower:
+        dead_end_tables = {"daily_revenue", "customer_segments", "order_facts"}
+        if extract_tables(sql) & dead_end_tables:
+            return True
+
+    # Legacy SAP column trap: using cryptic raw column names without staging model
+    if "amtttl" in trap_lower or "stscode" in trap_lower or "taxamt" in trap_lower or "discpct" in trap_lower:
+        raw_legacy_cols = {"amtttl", "taxamt", "stscode", "discpct", "cstcode", "invno", "loccode", "dtcreat"}
+        used_cols = {c.lower() for c in extract_columns(sql)}
+        if used_cols & raw_legacy_cols:
+            tables = extract_tables(sql)
+            # Only a trap if querying raw table directly (not through staging)
+            if "raw_legacy_invoices" in tables and "stg_legacy_invoices" not in tables:
+                return True
 
     return False
 
@@ -132,5 +149,42 @@ def score_response(generated_sql: str | None, expected: dict, scoring: dict) -> 
         scores["avoids_trap"] = scoring.get("avoids_trap", 0)
     else:
         scores["avoids_trap"] = 0
+
+    return scores
+
+
+def score_text_response(text: str | None, expected: dict, scoring: dict) -> dict:
+    """Score a text (non-SQL) response by checking for expected keywords.
+
+    Returns a dict of score components.
+    """
+    if not text:
+        return {k: 0 for k in scoring}
+
+    text_lower = text.lower()
+    scores = {}
+
+    # Check required keywords
+    keywords = expected.get("keywords", [])
+    threshold = expected.get("keyword_threshold", 1)
+    if keywords:
+        found = sum(1 for kw in keywords if kw.lower() in text_lower)
+        if found >= threshold:
+            scores["correct_keywords"] = scoring.get("correct_keywords", 0)
+        else:
+            scores["correct_keywords"] = 0
+    else:
+        scores["correct_keywords"] = scoring.get("correct_keywords", 0)
+
+    # Check anti-keywords (things that should NOT appear)
+    anti_keywords = expected.get("anti_keywords", [])
+    if anti_keywords:
+        has_bad = any(ak.lower() in text_lower for ak in anti_keywords)
+        if not has_bad:
+            scores["avoids_trap"] = scoring.get("avoids_trap", 0)
+        else:
+            scores["avoids_trap"] = 0
+    else:
+        scores["avoids_trap"] = scoring.get("avoids_trap", 0)
 
     return scores

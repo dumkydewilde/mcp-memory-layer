@@ -1,0 +1,83 @@
+# Pilot: 1 question per category to validate all question types work
+# C = corrections, D = dbt, P = popularity, T = dead-end trap, L = legacy
+
+- id: "C01"
+  question: "What's the total revenue across all orders?"
+  target_features: [corrections]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [order_total]
+    filters: []
+    join_keys: []
+  trap: "raw_orders.order_total is in cents, not dollars"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "D01"
+  question: "What columns does the customers model have?"
+  target_features: [dbt_manifest]
+  difficulty: easy
+  answer_type: text
+  expected:
+    keywords: [customer_id, customer_name, lifetime_spend, customer_type, count_lifetime_orders]
+    keyword_threshold: 3
+    anti_keywords: []
+  scoring:
+    correct_keywords: 4
+    avoids_trap: 2
+
+- id: "P01"
+  question: "Show total revenue by product"
+  target_features: [popularity]
+  difficulty: medium
+  expected:
+    tables: [order_items, products]
+    columns: [product_name]
+    filters: []
+    join_keys: [product_id]
+  trap: "Not joining order_items to products — missing product name"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 2
+    avoids_trap: 1
+
+- id: "T01"
+  question: "Show me daily revenue totals for the past month"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [order_total, ordered_at]
+    filters: []
+    join_keys: []
+  trap: "Using daily_revenue dead-end table not in dbt manifest"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "L02"
+  question: "How many legacy invoices were cancelled?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [stg_legacy_invoices]
+    columns: [status]
+    filters: ["cancelled"]
+    join_keys: []
+  trap: "Using raw STSCODE='X' without understanding the mapping, or guessing wrong status values"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 2
+    correct_join: 0
+    avoids_trap: 2

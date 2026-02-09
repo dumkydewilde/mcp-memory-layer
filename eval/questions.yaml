@@ -374,186 +374,147 @@
 # =============================================================================
 # B. DBT MANIFEST (D01-D20)
 # Test whether model descriptions, column docs, and lineage help
+# Most D-series are text (metadata) questions; D11 is SQL.
 # =============================================================================
 
 - id: "D01"
   question: "What columns does the customers mart model contain?"
   target_features: [dbt_manifest]
   difficulty: easy
+  answer_type: text
   expected:
-    tables: [customers]
-    columns: [customer_id, customer_name, count_lifetime_orders, first_ordered_at, last_ordered_at, lifetime_spend_pretax, lifetime_tax_paid, lifetime_spend, customer_type]
-    filters: []
-    join_keys: []
-    notes: "Should list all columns from the dbt manifest for the customers model."
-  trap: "Confusing raw_customers columns with the customers mart columns"
+    keywords: [customer_id, customer_name, count_lifetime_orders, first_ordered_at, last_ordered_at, lifetime_spend_pretax, lifetime_tax_paid, lifetime_spend, customer_type]
+    keyword_threshold: 4
+    anti_keywords: []
+    notes: "Should list columns from the dbt manifest for the customers model."
   scoring:
-    correct_table: 1
-    correct_column: 3
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 4
     avoids_trap: 2
 
 - id: "D02"
   question: "How is lifetime_spend calculated in the customers model?"
   target_features: [dbt_manifest]
   difficulty: medium
+  answer_type: text
   expected:
-    tables: [customers, orders]
-    columns: [lifetime_spend, order_total, customer_id]
-    filters: []
-    join_keys: [customer_id]
+    keywords: [lifetime_spend, sum, order_total, customer_id]
+    keyword_threshold: 3
+    anti_keywords: []
     notes: "Trace lineage: SUM(orders.order_total) grouped by customer_id."
-  trap: "Without manifest, may guess it's a simple column rather than a derived aggregation"
   scoring:
-    correct_table: 2
-    correct_column: 1
-    correct_filter: 0
-    correct_join: 1
+    correct_keywords: 4
     avoids_trap: 2
 
 - id: "D03"
   question: "What upstream models does the orders mart depend on?"
   target_features: [dbt_manifest]
   difficulty: easy
+  answer_type: text
   expected:
-    tables: [orders, stg_orders, order_items]
-    columns: []
-    filters: []
-    join_keys: []
+    keywords: [stg_orders, order_items]
+    keyword_threshold: 2
+    anti_keywords: []
     notes: "Manifest lineage: orders depends on stg_orders and order_items."
-  trap: "Listing raw tables as direct dependencies instead of staging/intermediate models"
   scoring:
-    correct_table: 3
-    correct_column: 0
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 3
     avoids_trap: 2
 
 - id: "D04"
   question: "What does the stg_orders model do?"
   target_features: [dbt_manifest]
   difficulty: easy
+  answer_type: text
   expected:
-    tables: [stg_orders]
-    columns: [order_id, customer_id, location_id, subtotal, tax_paid, order_total, ordered_at]
-    filters: []
-    join_keys: []
+    keywords: [rename, customer_id, order_id, location_id, cents, dollars]
+    keyword_threshold: 3
+    anti_keywords: []
     notes: "Renames columns from raw_orders and converts cents to dollars."
-  trap: "Describing the orders mart instead of the staging model"
   scoring:
-    correct_table: 2
-    correct_column: 1
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 3
     avoids_trap: 2
 
 - id: "D05"
   question: "What data tests exist on the orders model?"
   target_features: [dbt_manifest]
   difficulty: medium
+  answer_type: text
   expected:
-    tables: [orders]
-    columns: [order_id, customer_id, order_items_subtotal, subtotal, order_total, tax_paid]
-    filters: []
-    join_keys: []
+    keywords: [not_null, unique, order_id, expression_is_true, relationship]
+    keyword_threshold: 3
+    anti_keywords: []
     notes: "Tests: not_null/unique on order_id, relationship on customer_id, expression tests on amounts."
-  trap: "Missing the expression_is_true tests on amount relationships"
   scoring:
-    correct_table: 2
-    correct_column: 2
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 4
     avoids_trap: 2
 
 - id: "D06"
   question: "What is the grain of the order_items model?"
   target_features: [dbt_manifest]
   difficulty: easy
+  answer_type: text
   expected:
-    tables: [order_items]
-    columns: [order_item_id]
-    filters: []
-    join_keys: []
+    keywords: [order_item_id, item]
+    keyword_threshold: 2
+    anti_keywords: []
     notes: "One row per order item. order_item_id is the unique key."
-  trap: "Confusing with order grain — one order can have multiple items"
   scoring:
-    correct_table: 2
-    correct_column: 2
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 3
     avoids_trap: 2
 
 - id: "D07"
   question: "How does data flow from raw_orders to the orders mart?"
   target_features: [dbt_manifest]
   difficulty: medium
+  answer_type: text
   expected:
-    tables: [raw_orders, stg_orders, order_items, orders]
-    columns: []
-    filters: []
-    join_keys: []
-    notes: "Lineage: raw_orders → stg_orders (rename + cents_to_dollars) → orders (join with order_items summary)."
-  trap: "Skipping the staging layer or showing wrong transformation steps"
+    keywords: [raw_orders, stg_orders, order_items, orders]
+    keyword_threshold: 3
+    anti_keywords: []
+    notes: "Lineage: raw_orders → stg_orders → orders (join with order_items summary)."
   scoring:
-    correct_table: 3
-    correct_column: 0
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 3
     avoids_trap: 2
 
 - id: "D08"
   question: "What transformations happen in stg_orders?"
   target_features: [dbt_manifest]
   difficulty: medium
+  answer_type: text
   expected:
-    tables: [stg_orders, raw_orders]
-    columns: [subtotal, subtotal_cents, order_id, customer_id, location_id]
-    filters: []
-    join_keys: []
-    notes: "Renames: id→order_id, customer→customer_id, store_id→location_id. Converts cents to dollars via macro."
-  trap: "Not mentioning the cents-to-dollars conversion is a critical omission"
+    keywords: [rename, cents, dollars, order_id, customer_id, location_id]
+    keyword_threshold: 3
+    anti_keywords: []
+    notes: "Renames: id→order_id, customer→customer_id, store_id→location_id. Converts cents to dollars."
   scoring:
-    correct_table: 2
-    correct_column: 1
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 3
     avoids_trap: 3
 
 - id: "D09"
   question: "What are the accepted values for customer_type?"
   target_features: [dbt_manifest]
   difficulty: easy
+  answer_type: text
   expected:
-    tables: [customers]
-    columns: [customer_type]
-    filters: []
-    join_keys: []
+    keywords: ["new", "returning"]
+    keyword_threshold: 2
+    anti_keywords: [active, inactive, repeat, existing]
     notes: "accepted_values test: 'new', 'returning'."
-  trap: "Guessing values like 'active', 'inactive', 'repeat' instead of actual tested values"
   scoring:
-    correct_table: 1
-    correct_column: 1
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 2
     avoids_trap: 3
 
 - id: "D10"
   question: "Is there a relationship test between orders and stg_customers?"
   target_features: [dbt_manifest]
   difficulty: medium
+  answer_type: text
   expected:
-    tables: [orders, stg_customers]
-    columns: [customer_id]
-    filters: []
-    join_keys: [customer_id]
+    keywords: [customer_id, relationship, orders, stg_customers]
+    keyword_threshold: 3
+    anti_keywords: []
     notes: "Yes: orders.customer_id references stg_customers.customer_id."
-  trap: "Reporting the relationship as orders→customers instead of orders→stg_customers"
   scoring:
-    correct_table: 2
-    correct_column: 1
-    correct_filter: 0
-    correct_join: 1
+    correct_keywords: 4
     avoids_trap: 2
 
 - id: "D11"
@@ -578,162 +539,126 @@
   question: "What's the difference between order_cost and order_items_subtotal in orders?"
   target_features: [dbt_manifest]
   difficulty: hard
+  answer_type: text
   expected:
-    tables: [orders, order_items]
-    columns: [order_cost, order_items_subtotal, supply_cost, product_price]
-    filters: []
-    join_keys: []
-    notes: "order_cost = sum of supply_cost (what it costs to make). order_items_subtotal = sum of product_price (what customer pays)."
-  trap: "Treating them as interchangeable when they represent cost vs revenue"
+    keywords: [order_cost, supply_cost, order_items_subtotal, product_price]
+    keyword_threshold: 3
+    anti_keywords: []
+    notes: "order_cost = sum of supply_cost (cost to make). order_items_subtotal = sum of product_price (what customer pays)."
   scoring:
-    correct_table: 2
-    correct_column: 2
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 4
     avoids_trap: 3
 
 - id: "D13"
   question: "How does the order_items mart join its source tables?"
   target_features: [dbt_manifest]
   difficulty: hard
+  answer_type: text
   expected:
-    tables: [order_items, stg_order_items, stg_orders, stg_products, stg_supplies]
-    columns: [order_id, product_id]
-    filters: []
-    join_keys: [order_id, product_id]
-    notes: "stg_order_items LEFT JOIN stg_orders (order_id), LEFT JOIN stg_products (product_id), LEFT JOIN supplies_summary (product_id)."
-  trap: "Missing the supplies aggregation step before joining"
+    keywords: [stg_order_items, stg_orders, stg_products, order_id, product_id, join]
+    keyword_threshold: 4
+    anti_keywords: []
+    notes: "stg_order_items LEFT JOIN stg_orders (order_id), LEFT JOIN stg_products (product_id), LEFT JOIN supplies_summary."
   scoring:
-    correct_table: 2
-    correct_column: 1
-    correct_filter: 0
-    correct_join: 2
+    correct_keywords: 5
     avoids_trap: 2
 
 - id: "D14"
   question: "What materialization strategy does each staging model use?"
   target_features: [dbt_manifest]
   difficulty: easy
+  answer_type: text
   expected:
-    tables: [stg_customers, stg_orders, stg_order_items, stg_products, stg_locations, stg_supplies]
-    columns: []
-    filters: []
-    join_keys: []
-    notes: "All staging models are materialized as views (per dbt_project.yml config)."
-  trap: "Guessing materializations instead of reading from manifest metadata"
+    keywords: [view, staging]
+    keyword_threshold: 1
+    anti_keywords: []
+    notes: "All staging models are materialized as views."
   scoring:
-    correct_table: 2
-    correct_column: 0
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 2
     avoids_trap: 2
 
 - id: "D15"
   question: "Which model renames 'sku' to 'product_id'?"
   target_features: [dbt_manifest]
   difficulty: easy
+  answer_type: text
   expected:
-    tables: [stg_order_items]
-    columns: [product_id]
-    filters: []
-    join_keys: []
+    keywords: [stg_order_items, sku]
+    keyword_threshold: 1
+    anti_keywords: []
     notes: "stg_order_items renames raw_items.sku to product_id."
-  trap: "Guessing stg_products instead of stg_order_items"
   scoring:
-    correct_table: 2
-    correct_column: 1
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 2
     avoids_trap: 2
 
 - id: "D16"
   question: "What columns does the orders mart add beyond what stg_orders provides?"
   target_features: [dbt_manifest]
   difficulty: hard
+  answer_type: text
   expected:
-    tables: [orders, stg_orders]
-    columns: [order_cost, order_items_subtotal, count_food_items, count_drink_items, count_order_items, is_food_order, is_drink_order, customer_order_number]
-    filters: []
-    join_keys: []
+    keywords: [order_cost, order_items_subtotal, count_order_items, is_food_order, is_drink_order, customer_order_number]
+    keyword_threshold: 3
+    anti_keywords: []
     notes: "Orders adds item counts, food/drink booleans, cost/subtotal aggregates, and customer_order_number."
-  trap: "Not recognizing the order_items summary join as the key transformation"
   scoring:
-    correct_table: 2
-    correct_column: 2
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 4
     avoids_trap: 2
 
 - id: "D17"
   question: "Can I get product details from the orders model?"
   target_features: [dbt_manifest]
   difficulty: easy
+  answer_type: text
   expected:
-    tables: [orders, order_items]
-    columns: [product_name]
-    filters: []
-    join_keys: []
+    keywords: [order_items, product]
+    keyword_threshold: 2
+    anti_keywords: []
     notes: "No — orders only has aggregated item counts. Use order_items for product details."
-  trap: "Assuming orders has product-level detail when it's at order grain"
   scoring:
-    correct_table: 2
-    correct_column: 1
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 3
     avoids_trap: 3
 
 - id: "D18"
   question: "What semantic model entities are defined for orders?"
   target_features: [dbt_manifest]
   difficulty: medium
+  answer_type: text
   expected:
-    tables: [orders]
-    columns: [order_id, location_id, customer_id]
-    filters: []
-    join_keys: []
-    notes: "Entities: order_id (primary), location (foreign, expr: location_id), customer (foreign, expr: customer_id)."
-  trap: "Not knowing about semantic model definitions in the manifest"
+    keywords: [order_id, location_id, customer_id, entit]
+    keyword_threshold: 3
+    anti_keywords: []
+    notes: "Entities: order_id (primary), location (foreign), customer (foreign)."
   scoring:
-    correct_table: 1
-    correct_column: 2
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 3
     avoids_trap: 2
 
 - id: "D19"
   question: "Which raw source tables feed into the customers mart?"
   target_features: [dbt_manifest]
   difficulty: medium
+  answer_type: text
   expected:
-    tables: [raw_customers, raw_orders, raw_items, raw_products, raw_supplies, customers]
-    columns: []
-    filters: []
-    join_keys: []
-    notes: "Full lineage: raw_customers→stg_customers, raw_orders→stg_orders→orders→customers. Also raw_items→order_items→orders."
-  trap: "Only listing raw_customers and missing that order data also feeds into customer aggregations"
+    keywords: [raw_customers, raw_orders]
+    keyword_threshold: 2
+    anti_keywords: []
+    notes: "Full lineage: raw_customers→stg_customers + raw_orders→stg_orders→orders→customers."
   scoring:
-    correct_table: 3
-    correct_column: 0
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 3
     avoids_trap: 3
 
 - id: "D20"
   question: "What dbt metrics are defined on the orders model?"
   target_features: [dbt_manifest]
   difficulty: medium
+  answer_type: text
   expected:
-    tables: [orders]
-    columns: [order_total, order_count]
-    filters: []
-    join_keys: []
+    keywords: [order_total, metric]
+    keyword_threshold: 2
+    anti_keywords: []
     notes: "Metrics: order_total, orders (count), new_customer_orders, large_orders, food_orders, drink_orders."
-  trap: "Not knowing about semantic layer metrics in the manifest"
   scoring:
-    correct_table: 1
-    correct_column: 1
-    correct_filter: 0
-    correct_join: 0
+    correct_keywords: 2
     avoids_trap: 2
 
 # =============================================================================
@@ -1098,5 +1023,234 @@
     correct_table: 1
     correct_column: 3
     correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+# =============================================================================
+# D. TABLE TRAPS (T01-T06)
+# Dead-end tables that exist in the DB but are NOT in the dbt manifest.
+# Tests whether dbt context (list_dbt_models) helps avoid non-managed tables.
+# =============================================================================
+
+- id: "T01"
+  question: "Show me daily revenue totals for the past month"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [order_total, ordered_at]
+    filters: []
+    join_keys: []
+    notes: "daily_revenue table exists but is stale and only covers 3 of 6 locations. Use orders instead."
+  trap: "Using daily_revenue dead-end table not in dbt manifest"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "T02"
+  question: "What's the total revenue broken down by location?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [order_total, location_id]
+    filters: []
+    join_keys: []
+    notes: "daily_revenue is missing half the locations. Use orders grouped by location_id."
+  trap: "Using daily_revenue dead-end table not in dbt manifest"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "T03"
+  question: "How many VIP customers do we have?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [customers]
+    columns: [lifetime_spend]
+    filters: []
+    join_keys: []
+    notes: "customer_segments has a 'vip' segment but uses invented labels. customers mart with lifetime_spend is the source of truth."
+  trap: "Using customer_segments dead-end table not in dbt manifest"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "T04"
+  question: "Segment our customers by their spending level"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [customers]
+    columns: [lifetime_spend, customer_type]
+    filters: []
+    join_keys: []
+    notes: "customer_segments exists but only covers 500 of 935 customers and is stale. Use customers mart."
+  trap: "Using customer_segments dead-end table not in dbt manifest"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "T05"
+  question: "Get a list of orders with customer names and totals"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [orders, customers]
+    columns: [customer_name, order_total]
+    filters: []
+    join_keys: [customer_id]
+    notes: "order_facts has this pre-joined but uses ambiguous 'total' (actually subtotal) and is missing recent data."
+  trap: "Using order_facts dead-end table not in dbt manifest"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 2
+    avoids_trap: 3
+
+- id: "T06"
+  question: "Which customers placed the most expensive orders?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [orders, customers]
+    columns: [customer_name, order_total]
+    filters: []
+    join_keys: [customer_id]
+    notes: "order_facts 'total' is actually subtotal (pre-tax), not order_total. Use orders JOIN customers."
+  trap: "Using order_facts dead-end table not in dbt manifest"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 2
+    avoids_trap: 3
+
+# =============================================================================
+# E. LEGACY COLUMN NAMES (L01-L06)
+# SAP-style 8-char column names without underscores (e.g. AMTTTL, CSTCODE).
+# Tests whether dbt model SQL/descriptions help decode cryptic column names.
+# Without dbt context, a model must guess what AMTTTL or STSCODE mean.
+# =============================================================================
+
+- id: "L01"
+  question: "What is the total invoice amount across all legacy invoices?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [stg_legacy_invoices]
+    columns: [total_amount]
+    filters: []
+    join_keys: []
+    notes: "Must use stg_legacy_invoices (has total_amount in dollars) or raw_legacy_invoices with AMTTTL/100."
+  trap: "Using raw AMTTTL column without dividing by 100, or not knowing AMTTTL means total amount"
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "L02"
+  question: "How many legacy invoices were cancelled?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [stg_legacy_invoices]
+    columns: [status]
+    filters: ["cancelled"]
+    join_keys: []
+    notes: "Status 'X' means cancelled in the legacy system. stg_legacy_invoices decodes this to 'cancelled'. Without dbt SQL, the model can't know X=cancelled."
+  trap: "Using raw STSCODE='X' without understanding the mapping, or guessing wrong status values"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 2
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "L03"
+  question: "Show the total tax collected from legacy invoices"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [stg_legacy_invoices]
+    columns: [tax_amount]
+    filters: []
+    join_keys: []
+    notes: "TAXAMT is the raw column name. stg_legacy_invoices renames it to tax_amount and converts cents to dollars."
+  trap: "Using raw TAXAMT without dividing by 100, or not knowing what TAXAMT means"
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "L04"
+  question: "Which customers have legacy invoices with a discount applied?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [stg_legacy_invoices]
+    columns: [customer_code, discount_percent]
+    filters: ["discount_percent"]
+    join_keys: []
+    notes: "DISCPCT is the raw column. stg_legacy_invoices renames it to discount_percent. Filter where discount_percent > 0."
+  trap: "Not knowing DISCPCT means discount percentage, or using wrong column name"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 2
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "L05"
+  question: "What is the average invoice amount by location for completed legacy invoices?"
+  target_features: [dbt_manifest]
+  difficulty: hard
+  expected:
+    tables: [stg_legacy_invoices]
+    columns: [total_amount, location_code, status]
+    filters: ["completed"]
+    join_keys: []
+    notes: "Requires knowing: LOCCODE→location_code, AMTTTL→total_amount, STSCODE C→completed. All from dbt model SQL."
+  trap: "Not knowing legacy column mappings or status code meanings"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 2
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "L06"
+  question: "List the pending legacy invoices with their pre-tax subtotals"
+  target_features: [dbt_manifest]
+  difficulty: hard
+  expected:
+    tables: [stg_legacy_invoices]
+    columns: [invoice_id, subtotal, status]
+    filters: ["pending"]
+    join_keys: []
+    notes: "Requires knowing STSCODE P→pending and that subtotal = (AMTTTL-TAXAMT)/100. Only the dbt model SQL has this logic."
+  trap: "Not knowing STSCODE P=pending or how subtotal is computed from raw columns"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 2
     correct_join: 0
     avoids_trap: 2
