@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from eval.scorer import score_response
+from eval.scorer import score_response, score_text_response
 
 # Server configurations to test
 CONFIGS = {
@@ -398,6 +398,22 @@ def extract_sql_from_messages(messages: list) -> str | None:
     return None
 
 
+def extract_text_from_messages(messages: list) -> str:
+    """Extract all assistant text from messages (for text-answer scoring)."""
+    parts = []
+    for msg in messages:
+        if msg["role"] != "assistant":
+            continue
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    parts.append(block["text"])
+        elif isinstance(content, str):
+            parts.append(content)
+    return "\n".join(parts)
+
+
 def _extract_sql_block(text: str) -> str | None:
     """Extract SQL from a ```sql code block."""
     matches = re.findall(r"```sql\s*(.*?)```", text, re.DOTALL)
@@ -466,18 +482,28 @@ def run_question(
 
         messages.append({"role": "user", "content": tool_results})
 
-    # Extract SQL from conversation
-    generated_sql = extract_sql_from_messages(messages)
+    # Score based on answer type
+    answer_type = question.get("answer_type", "sql")
 
-    # Score
-    scores = score_response(
-        generated_sql, {**question["expected"], "trap": question.get("trap")}, question["scoring"]
-    )
+    if answer_type == "text":
+        generated_text = extract_text_from_messages(messages)
+        scores = score_text_response(
+            generated_text, question["expected"], question["scoring"]
+        )
+        generated_sql = None
+    else:
+        generated_sql = extract_sql_from_messages(messages)
+        generated_text = None
+        scores = score_response(
+            generated_sql, {**question["expected"], "trap": question.get("trap")}, question["scoring"]
+        )
 
     return {
         "id": question["id"],
         "question": question["question"],
+        "answer_type": answer_type,
         "generated_sql": generated_sql,
+        "generated_text": generated_text[:500] if generated_text else None,
         "scores": scores,
         "total": sum(scores.values()),
         "max_possible": sum(question["scoring"].values()),

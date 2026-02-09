@@ -151,3 +151,40 @@ def score_response(generated_sql: str | None, expected: dict, scoring: dict) -> 
         scores["avoids_trap"] = 0
 
     return scores
+
+
+def score_text_response(text: str | None, expected: dict, scoring: dict) -> dict:
+    """Score a text (non-SQL) response by checking for expected keywords.
+
+    Returns a dict of score components.
+    """
+    if not text:
+        return {k: 0 for k in scoring}
+
+    text_lower = text.lower()
+    scores = {}
+
+    # Check required keywords
+    keywords = expected.get("keywords", [])
+    threshold = expected.get("keyword_threshold", 1)
+    if keywords:
+        found = sum(1 for kw in keywords if kw.lower() in text_lower)
+        if found >= threshold:
+            scores["correct_keywords"] = scoring.get("correct_keywords", 0)
+        else:
+            scores["correct_keywords"] = 0
+    else:
+        scores["correct_keywords"] = scoring.get("correct_keywords", 0)
+
+    # Check anti-keywords (things that should NOT appear)
+    anti_keywords = expected.get("anti_keywords", [])
+    if anti_keywords:
+        has_bad = any(ak.lower() in text_lower for ak in anti_keywords)
+        if not has_bad:
+            scores["avoids_trap"] = scoring.get("avoids_trap", 0)
+        else:
+            scores["avoids_trap"] = 0
+    else:
+        scores["avoids_trap"] = scoring.get("avoids_trap", 0)
+
+    return scores
