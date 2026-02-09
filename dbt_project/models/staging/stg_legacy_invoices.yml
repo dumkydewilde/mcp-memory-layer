@@ -1,0 +1,34 @@
+models:
+  - name: stg_legacy_invoices
+    description: >
+      Staging model for legacy invoice data from the old SAP-based ERP system.
+      Renames cryptic 8-character column names to human-readable equivalents,
+      converts cent amounts to dollars, and decodes status codes.
+    columns:
+      - name: invoice_id
+        description: Unique invoice identifier (from legacy INVNO column).
+        data_tests:
+          - not_null
+          - unique
+      - name: customer_code
+        description: Customer identifier from legacy system (from CSTCODE).
+      - name: location_code
+        description: Store/warehouse location identifier (from LOCCODE).
+      - name: total_amount_cents
+        description: Total invoice amount in cents (raw AMTTTL value).
+      - name: tax_amount_cents
+        description: Tax amount in cents (raw TAXAMT value).
+      - name: total_amount
+        description: Total invoice amount in dollars (AMTTTL / 100).
+      - name: tax_amount
+        description: Tax amount in dollars (TAXAMT / 100).
+      - name: subtotal
+        description: Pre-tax amount in dollars ((AMTTTL - TAXAMT) / 100).
+      - name: discount_percent
+        description: Discount percentage applied (0-100 scale, from DISCPCT).
+      - name: status_code_raw
+        description: Raw legacy status code (C/P/X from STSCODE).
+      - name: status
+        description: Human-readable status (completed/pending/cancelled, decoded from STSCODE).
+      - name: created_at
+        description: Invoice creation date (from DTCREAT).

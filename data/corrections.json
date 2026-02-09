@@ -120,6 +120,54 @@
       "category": "schema_design",
       "created_at": "2025-02-07T10:00:00Z",
       "source": "manual"
+    },
+    {
+      "id": "corr_011",
+      "scope": {
+        "tables": ["daily_revenue"],
+        "columns": ["total_revenue", "avg_order_value"],
+        "keywords": ["revenue", "daily", "location revenue", "revenue trend", "revenue by location"]
+      },
+      "correction": "AVOID the daily_revenue table — it is a stale snapshot covering only 3 of 6 locations and 30 days of data. It is NOT managed by dbt. Use the orders table (order_total, ordered_at, location_id) for complete revenue data.",
+      "category": "dead_end_table",
+      "created_at": "2025-02-08T10:00:00Z",
+      "source": "manual"
+    },
+    {
+      "id": "corr_012",
+      "scope": {
+        "tables": ["customer_segments"],
+        "columns": ["segment", "lifetime_value", "risk_score"],
+        "keywords": ["segment", "VIP", "customer segment", "customer value", "at risk", "churn"]
+      },
+      "correction": "AVOID the customer_segments table — it is a stale snapshot covering only 500 of 935 customers with invented segment labels (vip/regular/at_risk). It is NOT managed by dbt. Use the customers mart (customer_type, lifetime_spend) for customer classification.",
+      "category": "dead_end_table",
+      "created_at": "2025-02-08T10:00:00Z",
+      "source": "manual"
+    },
+    {
+      "id": "corr_013",
+      "scope": {
+        "tables": ["order_facts"],
+        "columns": ["total", "item_count", "order_date"],
+        "keywords": ["order details", "order with customer", "customer name order", "expensive order"]
+      },
+      "correction": "AVOID the order_facts table — it is a stale denormalized snapshot missing the most recent week of data, and its 'total' column is actually subtotal (pre-tax), not order_total. It is NOT managed by dbt. Join orders to customers on customer_id instead.",
+      "category": "dead_end_table",
+      "created_at": "2025-02-08T10:00:00Z",
+      "source": "manual"
+    },
+    {
+      "id": "corr_014",
+      "scope": {
+        "tables": ["raw_legacy_invoices", "stg_legacy_invoices"],
+        "columns": ["INVNO", "CSTCODE", "AMTTTL", "TAXAMT", "DISCPCT", "DTCREAT", "STSCODE", "LOCCODE", "invoice_id", "total_amount", "tax_amount", "status"],
+        "keywords": ["legacy", "invoice", "SAP", "ERP", "cancelled", "pending", "completed", "discount"]
+      },
+      "correction": "raw_legacy_invoices has SAP-style 8-char column names: INVNO=invoice_id, CSTCODE=customer_code, AMTTTL=total_amount (cents), TAXAMT=tax_amount (cents), DISCPCT=discount_percent, DTCREAT=created_at, STSCODE=status_code (C=completed, P=pending, X=cancelled), LOCCODE=location_code. Use stg_legacy_invoices which renames columns, converts cents to dollars, and decodes status codes.",
+      "category": "naming_convention",
+      "created_at": "2025-02-08T12:00:00Z",
+      "source": "manual"
     }
   ]
 }

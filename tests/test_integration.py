@@ -9,7 +9,7 @@ from mcp_memory.dbt_context import DbtManifest
 from mcp_memory.popularity import PopularityTracker
 
 DATA_DIR = Path(__file__).parent.parent / "data"
-JAFFLE_MANIFEST = DATA_DIR / "jaffle_shop" / "target" / "manifest.json"
+JAFFLE_MANIFEST = Path(__file__).parent.parent / "dbt_project" / "target" / "manifest.json"
 CORRECTIONS_JSON = DATA_DIR / "corrections.json"
 POPULARITY_SEED = DATA_DIR / "popularity_seed.sql"
 
@@ -29,7 +29,7 @@ class TestRealManifest:
         expected = {
             "customers", "orders", "order_items", "products", "locations", "supplies",
             "stg_customers", "stg_orders", "stg_order_items", "stg_products",
-            "stg_locations", "stg_supplies",
+            "stg_locations", "stg_supplies", "stg_legacy_invoices",
         }
         assert expected.issubset(set(manifest.models.keys()))
 
@@ -67,8 +67,8 @@ class TestRealCorrections:
     def store(self) -> CorrectionsStore:
         return CorrectionsStore(CORRECTIONS_JSON)
 
-    def test_loads_10_corrections(self, store: CorrectionsStore):
-        assert len(store.corrections) == 10
+    def test_loads_14_corrections(self, store: CorrectionsStore):
+        assert len(store.corrections) == 14
 
     def test_cents_trap_matches_revenue_question(self, store: CorrectionsStore):
         result = store.get_corrections("What is the total revenue?")

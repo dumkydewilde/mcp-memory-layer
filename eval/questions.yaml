@@ -1100,3 +1100,232 @@
     correct_filter: 0
     correct_join: 0
     avoids_trap: 2
+
+# =============================================================================
+# D. TABLE TRAPS (T01-T06)
+# Dead-end tables that exist in the DB but are NOT in the dbt manifest.
+# Tests whether dbt context (list_dbt_models) helps avoid non-managed tables.
+# =============================================================================
+
+- id: "T01"
+  question: "Show me daily revenue totals for the past month"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [order_total, ordered_at]
+    filters: []
+    join_keys: []
+    notes: "daily_revenue table exists but is stale and only covers 3 of 6 locations. Use orders instead."
+  trap: "Using daily_revenue dead-end table not in dbt manifest"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "T02"
+  question: "What's the total revenue broken down by location?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [orders]
+    columns: [order_total, location_id]
+    filters: []
+    join_keys: []
+    notes: "daily_revenue is missing half the locations. Use orders grouped by location_id."
+  trap: "Using daily_revenue dead-end table not in dbt manifest"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "T03"
+  question: "How many VIP customers do we have?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [customers]
+    columns: [lifetime_spend]
+    filters: []
+    join_keys: []
+    notes: "customer_segments has a 'vip' segment but uses invented labels. customers mart with lifetime_spend is the source of truth."
+  trap: "Using customer_segments dead-end table not in dbt manifest"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "T04"
+  question: "Segment our customers by their spending level"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [customers]
+    columns: [lifetime_spend, customer_type]
+    filters: []
+    join_keys: []
+    notes: "customer_segments exists but only covers 500 of 935 customers and is stale. Use customers mart."
+  trap: "Using customer_segments dead-end table not in dbt manifest"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 3
+
+- id: "T05"
+  question: "Get a list of orders with customer names and totals"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [orders, customers]
+    columns: [customer_name, order_total]
+    filters: []
+    join_keys: [customer_id]
+    notes: "order_facts has this pre-joined but uses ambiguous 'total' (actually subtotal) and is missing recent data."
+  trap: "Using order_facts dead-end table not in dbt manifest"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 2
+    avoids_trap: 3
+
+- id: "T06"
+  question: "Which customers placed the most expensive orders?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [orders, customers]
+    columns: [customer_name, order_total]
+    filters: []
+    join_keys: [customer_id]
+    notes: "order_facts 'total' is actually subtotal (pre-tax), not order_total. Use orders JOIN customers."
+  trap: "Using order_facts dead-end table not in dbt manifest"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 0
+    correct_join: 2
+    avoids_trap: 3
+
+# =============================================================================
+# E. LEGACY COLUMN NAMES (L01-L06)
+# SAP-style 8-char column names without underscores (e.g. AMTTTL, CSTCODE).
+# Tests whether dbt model SQL/descriptions help decode cryptic column names.
+# Without dbt context, a model must guess what AMTTTL or STSCODE mean.
+# =============================================================================
+
+- id: "L01"
+  question: "What is the total invoice amount across all legacy invoices?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [stg_legacy_invoices]
+    columns: [total_amount]
+    filters: []
+    join_keys: []
+    notes: "Must use stg_legacy_invoices (has total_amount in dollars) or raw_legacy_invoices with AMTTTL/100."
+  trap: "Using raw AMTTTL column without dividing by 100, or not knowing AMTTTL means total amount"
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "L02"
+  question: "How many legacy invoices were cancelled?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [stg_legacy_invoices]
+    columns: [status]
+    filters: ["cancelled"]
+    join_keys: []
+    notes: "Status 'X' means cancelled in the legacy system. stg_legacy_invoices decodes this to 'cancelled'. Without dbt SQL, the model can't know X=cancelled."
+  trap: "Using raw STSCODE='X' without understanding the mapping, or guessing wrong status values"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 2
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "L03"
+  question: "Show the total tax collected from legacy invoices"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [stg_legacy_invoices]
+    columns: [tax_amount]
+    filters: []
+    join_keys: []
+    notes: "TAXAMT is the raw column name. stg_legacy_invoices renames it to tax_amount and converts cents to dollars."
+  trap: "Using raw TAXAMT without dividing by 100, or not knowing what TAXAMT means"
+  scoring:
+    correct_table: 2
+    correct_column: 2
+    correct_filter: 0
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "L04"
+  question: "Which customers have legacy invoices with a discount applied?"
+  target_features: [dbt_manifest]
+  difficulty: medium
+  expected:
+    tables: [stg_legacy_invoices]
+    columns: [customer_code, discount_percent]
+    filters: ["discount_percent"]
+    join_keys: []
+    notes: "DISCPCT is the raw column. stg_legacy_invoices renames it to discount_percent. Filter where discount_percent > 0."
+  trap: "Not knowing DISCPCT means discount percentage, or using wrong column name"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 2
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "L05"
+  question: "What is the average invoice amount by location for completed legacy invoices?"
+  target_features: [dbt_manifest]
+  difficulty: hard
+  expected:
+    tables: [stg_legacy_invoices]
+    columns: [total_amount, location_code, status]
+    filters: ["completed"]
+    join_keys: []
+    notes: "Requires knowing: LOCCODE→location_code, AMTTTL→total_amount, STSCODE C→completed. All from dbt model SQL."
+  trap: "Not knowing legacy column mappings or status code meanings"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 2
+    correct_join: 0
+    avoids_trap: 2
+
+- id: "L06"
+  question: "List the pending legacy invoices with their pre-tax subtotals"
+  target_features: [dbt_manifest]
+  difficulty: hard
+  expected:
+    tables: [stg_legacy_invoices]
+    columns: [invoice_id, subtotal, status]
+    filters: ["pending"]
+    join_keys: []
+    notes: "Requires knowing STSCODE P→pending and that subtotal = (AMTTTL-TAXAMT)/100. Only the dbt model SQL has this logic."
+  trap: "Not knowing STSCODE P=pending or how subtotal is computed from raw columns"
+  scoring:
+    correct_table: 2
+    correct_column: 1
+    correct_filter: 2
+    correct_join: 0
+    avoids_trap: 2

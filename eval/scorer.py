@@ -70,6 +70,22 @@ def contains_trap_pattern(sql: str, trap: str | None) -> bool:
             # Check if any expected table alone would suffice
             return True
 
+    # Dead-end table trap: using non-dbt tables that exist in DB but aren't managed
+    if "dead-end" in trap_lower or "not in dbt" in trap_lower:
+        dead_end_tables = {"daily_revenue", "customer_segments", "order_facts"}
+        if extract_tables(sql) & dead_end_tables:
+            return True
+
+    # Legacy SAP column trap: using cryptic raw column names without staging model
+    if "amtttl" in trap_lower or "stscode" in trap_lower or "taxamt" in trap_lower or "discpct" in trap_lower:
+        raw_legacy_cols = {"amtttl", "taxamt", "stscode", "discpct", "cstcode", "invno", "loccode", "dtcreat"}
+        used_cols = {c.lower() for c in extract_columns(sql)}
+        if used_cols & raw_legacy_cols:
+            tables = extract_tables(sql)
+            # Only a trap if querying raw table directly (not through staging)
+            if "raw_legacy_invoices" in tables and "stg_legacy_invoices" not in tables:
+                return True
+
     return False
 
 

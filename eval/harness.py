@@ -292,6 +292,17 @@ def build_tools(config: dict) -> list[dict]:
                 },
             },
             {
+                "name": "get_model_sql",
+                "description": "Get the full raw SQL for a dbt model. Use when you need to understand exact transformations, column renames, or business logic.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "table_name": {"type": "string", "description": "Model/table name"}
+                    },
+                    "required": ["table_name"],
+                },
+            },
+            {
                 "name": "list_dbt_models",
                 "description": "List all available dbt models with descriptions.",
                 "input_schema": {"type": "object", "properties": {}},
@@ -335,6 +346,8 @@ def simulate_tool_call(
         )
     elif tool_name == "get_dbt_context" and dbt_manifest:
         return dbt_manifest.get_context(tool_input["table_name"])
+    elif tool_name == "get_model_sql" and dbt_manifest:
+        return dbt_manifest.get_model_sql(tool_input["table_name"])
     elif tool_name == "list_dbt_models" and dbt_manifest:
         return dbt_manifest.list_models()
     elif tool_name == "get_popular_context" and popularity_tracker:
@@ -505,7 +518,7 @@ def run_eval(
             corrections_store = CorrectionsStore(corrections_path)
 
     if config.get("dbt"):
-        manifest_path = data_dir / "jaffle_shop" / "target" / "manifest.json"
+        manifest_path = data_dir.parent / "dbt_project" / "target" / "manifest.json"
         if manifest_path.exists():
             dbt_manifest = DbtManifest(manifest_path)
 
