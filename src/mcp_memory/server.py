@@ -63,7 +63,10 @@ if ENABLE_QUERY:
             rows = result.fetchall()
             conn.close()
         except Exception as e:
-            return f"Query error: {e}"
+            error_msg = str(e)
+            if dbt_manifest:
+                error_msg = dbt_manifest.enrich_error(error_msg, sql)
+            return f"Query error: {error_msg}"
 
         # Record patterns for popularity tracking
         if popularity_tracker:
