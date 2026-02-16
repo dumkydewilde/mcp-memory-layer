@@ -19,6 +19,7 @@ POPULARITY_DB_PATH = Path(os.environ.get("MCP_MEMORY_POPULARITY_DB", DATA_DIR / 
 POPULARITY_SEED_PATH = Path(os.environ.get("MCP_MEMORY_POPULARITY_SEED", DATA_DIR / "popularity_seed.sql"))
 
 # Feature flags
+ENABLE_QUERY = os.environ.get("MCP_MEMORY_QUERY", "true").lower() == "true"
 ENABLE_CORRECTIONS = os.environ.get("MCP_MEMORY_CORRECTIONS", "true").lower() == "true"
 ENABLE_DBT = os.environ.get("MCP_MEMORY_DBT", "true").lower() == "true"
 ENABLE_POPULARITY = os.environ.get("MCP_MEMORY_POPULARITY", "true").lower() == "true"
@@ -37,59 +38,61 @@ if popularity_tracker and POPULARITY_SEED_PATH.exists():
 # Create MCP server
 mcp = FastMCP(
     "mcp-memory",
-    description="MCP server with memory layer for better text-to-SQL",
+    instructions="MCP server with memory layer for better text-to-SQL",
 )
 
 
 # --- Query tool ---
 
-@mcp.tool()
-def query(sql: str) -> str:
-    """Execute a SQL query against the DuckDB database.
+if ENABLE_QUERY:
 
-    Args:
-        sql: The SQL query to execute (DuckDB dialect).
+    @mcp.tool()
+    def query(sql: str) -> str:
+        """Execute a SQL query against the DuckDB database.
 
-    Returns:
-        Query results as formatted text, or an error message.
-    """
-    try:
-        conn = duckdb.connect(str(DUCKDB_PATH), read_only=True)
-        result = conn.execute(sql)
-        columns = [desc[0] for desc in result.description]
-        rows = result.fetchall()
-        conn.close()
-    except Exception as e:
-        return f"Query error: {e}"
+        Args:
+            sql: The SQL query to execute (DuckDB dialect).
 
-    # Record patterns for popularity tracking
-    if popularity_tracker:
+        Returns:
+            Query results as formatted text, or an error message.
+        """
         try:
-            popularity_tracker.record_query(sql)
-        except Exception:
-            pass  # Never let tracking fail the query
+            conn = duckdb.connect(str(DUCKDB_PATH), read_only=True)
+            result = conn.execute(sql)
+            columns = [desc[0] for desc in result.description]
+            rows = result.fetchall()
+            conn.close()
+        except Exception as e:
+            return f"Query error: {e}"
 
-    # Format output
-    if not rows:
-        return "Query returned no results."
+        # Record patterns for popularity tracking
+        if popularity_tracker:
+            try:
+                popularity_tracker.record_query(sql)
+            except Exception:
+                pass  # Never let tracking fail the query
 
-    # Build a simple table
-    col_widths = [len(c) for c in columns]
-    for row in rows[:50]:  # Limit display to 50 rows
-        for i, val in enumerate(row):
-            col_widths[i] = max(col_widths[i], len(str(val)))
+        # Format output
+        if not rows:
+            return "Query returned no results."
 
-    header = " | ".join(c.ljust(col_widths[i]) for i, c in enumerate(columns))
-    separator = "-+-".join("-" * w for w in col_widths)
-    lines = [header, separator]
-    for row in rows[:50]:
-        lines.append(" | ".join(str(v).ljust(col_widths[i]) for i, v in enumerate(row)))
+        # Build a simple table
+        col_widths = [len(c) for c in columns]
+        for row in rows[:50]:  # Limit display to 50 rows
+            for i, val in enumerate(row):
+                col_widths[i] = max(col_widths[i], len(str(val)))
 
-    output = "\n".join(lines)
-    if len(rows) > 50:
-        output += f"\n\n... ({len(rows)} total rows, showing first 50)"
+        header = " | ".join(c.ljust(col_widths[i]) for i, c in enumerate(columns))
+        separator = "-+-".join("-" * w for w in col_widths)
+        lines = [header, separator]
+        for row in rows[:50]:
+            lines.append(" | ".join(str(v).ljust(col_widths[i]) for i, v in enumerate(row)))
 
-    return output
+        output = "\n".join(lines)
+        if len(rows) > 50:
+            output += f"\n\n... ({len(rows)} total rows, showing first 50)"
+
+        return output
 
 
 # --- Corrections tools ---

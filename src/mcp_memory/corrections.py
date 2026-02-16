@@ -70,6 +70,20 @@ class CorrectionsStore:
 
         return "\n".join(lines)
 
+    def list_all(self) -> str:
+        """Return all corrections as formatted text."""
+        if not self.corrections:
+            return "No corrections stored yet."
+        lines = [f"Schema corrections ({len(self.corrections)} total):\n"]
+        for corr in self.corrections:
+            tables = ", ".join(corr["scope"]["tables"])
+            lines.append(f"- [{corr['id']}] {corr['correction']}")
+            lines.append(f"  Tables: {tables}")
+            if corr["scope"].get("columns"):
+                lines.append(f"  Columns: {', '.join(corr['scope']['columns'])}")
+            lines.append("")
+        return "\n".join(lines)
+
     def save_correction(
         self,
         correction: str,
