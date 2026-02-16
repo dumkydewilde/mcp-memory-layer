@@ -36,6 +36,9 @@ def create_client(api: str):
     if api == "anthropic":
         from anthropic import Anthropic
         return Anthropic()
+    elif api == "openai":
+        from openai import OpenAI
+        return OpenAI()
     elif api == "openrouter":
         from openai import OpenAI
         return OpenAI(
@@ -111,7 +114,15 @@ def _messages_to_openai(system: str, messages: list[dict]) -> list[dict]:
     return oai
 
 
-def call_api(client, api: str, model: str, system: str, tools: list[dict], messages: list[dict]):
+def call_api(
+    client,
+    api: str,
+    model: str,
+    system: str,
+    tools: list[dict],
+    messages: list[dict],
+    service_tier: str | None = None,
+):
     """Make an API call and return a normalized response dict.
 
     Returns:
@@ -127,7 +138,7 @@ def call_api(client, api: str, model: str, system: str, tools: list[dict], messa
     if api == "anthropic":
         return _call_anthropic(client, model, system, tools, messages)
     else:
-        return _call_openrouter(client, model, system, tools, messages)
+        return _call_openai_compat(client, model, system, tools, messages, service_tier)
 
 
 def _call_anthropic(client, model, system, tools, messages):
@@ -163,7 +174,7 @@ def _call_anthropic(client, model, system, tools, messages):
     }
 
 
-def _call_openrouter(client, model, system, tools, messages):
+def _call_openai_compat(client, model, system, tools, messages, service_tier=None):
     oai_messages = _messages_to_openai(system, messages)
     oai_tools = _tools_to_openai(tools)
 
@@ -175,6 +186,8 @@ def _call_openrouter(client, model, system, tools, messages):
     }
     if oai_tools:
         kwargs["tools"] = oai_tools
+    if service_tier:
+        kwargs["service_tier"] = service_tier
 
     response = client.chat.completions.create(**kwargs)
     choice = response.choices[0]
@@ -439,6 +452,7 @@ def run_question(
     corrections_store: CorrectionsStore | None,
     dbt_manifest: DbtManifest | None,
     popularity_tracker: PopularityTracker | None,
+    service_tier: str | None = None,
 ) -> dict:
     """Run a single question through an agentic loop."""
     system = build_system_prompt(config)
@@ -451,7 +465,7 @@ def run_question(
 
     # Agentic loop: max 5 turns
     for _ in range(5):
-        resp = call_api(client, api, model, system, tools, messages)
+        resp = call_api(client, api, model, system, tools, messages, service_tier)
 
         total_input_tokens += resp["input_tokens"]
         total_output_tokens += resp["output_tokens"]
@@ -522,6 +536,7 @@ def run_eval(
     runs: int = 3,
     limit: int = 0,
     api: str = "anthropic",
+    service_tier: str | None = None,
 ) -> list[dict]:
     """Run all questions N times and save results."""
     with open(questions_path) as f:
@@ -574,6 +589,7 @@ def run_eval(
                     corrections_store,
                     dbt_manifest,
                     popularity_tracker,
+                    service_tier,
                 )
                 result["run"] = run_idx
                 all_results.append(result)
@@ -618,9 +634,15 @@ def main():
     parser.add_argument("--limit", type=int, default=0, help="Limit to first N questions (0=all)")
     parser.add_argument(
         "--api",
-        choices=["anthropic", "openrouter"],
-        default="openrouter",
-        help="API backend (default: openrouter)",
+        choices=["anthropic", "openai", "openrouter"],
+        default="openai",
+        help="API backend (default: openai)",
+    )
+    parser.add_argument(
+        "--service-tier",
+        choices=["flex", "auto"],
+        default=None,
+        help="OpenAI service tier (e.g. 'flex' for discounted processing)",
     )
 
     args = parser.parse_args()
@@ -629,6 +651,7 @@ def main():
     if args.model is None:
         args.model = {
             "anthropic": "claude-sonnet-4-5-20250929",
+            "openai": "gpt-5.2",
             "openrouter": "anthropic/claude-sonnet-4.5",
         }[args.api]
 
@@ -636,7 +659,7 @@ def main():
 
     run_eval(
         args.questions, args.config, args.model, output_path, args.data_dir,
-        args.runs, args.limit, args.api,
+        args.runs, args.limit, args.api, args.service_tier,
     )
 
 
