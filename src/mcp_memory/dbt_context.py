@@ -1,8 +1,23 @@
 """dbt manifest parser — extracts model context for MCP tool responses."""
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import sqlglot
+import sqlglot.expressions as exp
+
+
+def extract_tables_from_sql(sql: str) -> list[str]:
+    """Extract table names from SQL using sqlglot, with regex fallback."""
+    try:
+        parsed = sqlglot.parse_one(sql, dialect="duckdb")
+        return [table.name for table in parsed.find_all(exp.Table)]
+    except Exception:
+        return re.findall(
+            r"(?:FROM|JOIN)\s+(?:[\w.]+\.)?(\w+)", sql, re.IGNORECASE
+        )
 
 
 @dataclass
@@ -112,6 +127,36 @@ class DbtManifest:
             return f"No SQL available for '{table_name}' (may be a seed or external source)."
 
         return f"```sql\n{sql}\n```"
+
+    def enrich_error(self, error_msg: str, sql: str) -> str:
+        """Enrich query errors with dbt column/table context when relevant."""
+        error_lower = error_msg.lower()
+        is_column_error = "column" in error_lower and "not found" in error_lower
+        is_table_error = "table" in error_lower and (
+            "not exist" in error_lower or "not found" in error_lower
+        )
+
+        if not (is_column_error or is_table_error):
+            return error_msg
+
+        tables = extract_tables_from_sql(sql)
+        hints: list[str] = []
+
+        for table in tables:
+            model = self.models.get(table)
+            if model and model.columns and is_column_error:
+                col_list = ", ".join(model.columns.keys())
+                hints.append(f"Available columns for `{table}`: {col_list}")
+            elif not model and is_table_error:
+                close = [m for m in self.models if table.lower() in m.lower()]
+                if close:
+                    hints.append(
+                        f"Model `{table}` not found. Similar models: {', '.join(close)}"
+                    )
+
+        if hints:
+            return error_msg + "\n\n**dbt context:**\n" + "\n".join(hints)
+        return error_msg
 
     def list_models(self) -> str:
         """List all available dbt models with brief descriptions."""
