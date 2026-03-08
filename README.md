@@ -121,6 +121,89 @@ uv run mcp-memory-mdw      # MotherDuck wrapper mode
 | `MCP_MEMORY_DBT` | `true` | Enable/disable dbt context |
 | `MCP_MEMORY_POPULARITY` | `true` | Enable/disable popularity tracking |
 
+## Bring your own project
+
+The memory layer works with any DuckDB/dbt project — not just the bundled jaffle_shop demo.
+
+### Quick setup
+
+```bash
+# Initialize config directory (~/.mcp-memory/)
+mcp-memory-cli init \
+  --duckdb-path /path/to/your/database.duckdb \
+  --manifest-path /path/to/your/dbt/target/manifest.json
+```
+
+This creates:
+- `~/.mcp-memory/config.toml` — paths and feature flags
+- `~/.mcp-memory/corrections.json` — empty corrections store (grows as you use it)
+
+Then run the server:
+
+```bash
+mcp-memory    # reads config from ~/.mcp-memory/config.toml
+```
+
+### Connecting your dbt manifest
+
+The `manifest` path supports multiple sources. The server resolves the manifest on startup:
+
+```toml
+[paths]
+# Local file — point to your dbt project's target directory
+manifest = "/path/to/your/dbt/target/manifest.json"
+
+# URL — S3 presigned URL, GCS signed URL, or any HTTP endpoint
+manifest = "https://my-bucket.s3.amazonaws.com/dbt/manifest.json"
+
+# MotherDuck table — manifest JSON stored in a table column
+manifest = "md:my_db.meta.dbt_manifest"
+```
+
+**Local file** is the simplest: run `dbt compile` (or `dbt build`) and point to `target/manifest.json`.
+
+**URL** is useful for teams: upload the manifest to a shared bucket as part of your dbt CI/CD pipeline (e.g. `dbt build && aws s3 cp target/manifest.json s3://...`). The server caches fetched manifests locally and re-fetches when the cache is older than 1 hour.
+
+**MotherDuck table** stores the manifest in a column named `manifest` (as a JSON string). This keeps everything in one place if you're already using MotherDuck for your warehouse. Example setup:
+
+```sql
+CREATE TABLE IF NOT EXISTS meta.dbt_manifest (manifest JSON);
+-- In your CI: TRUNCATE meta.dbt_manifest; INSERT INTO meta.dbt_manifest VALUES (?);
+```
+
+### Config file
+
+Instead of env vars, you can configure everything in `~/.mcp-memory/config.toml`:
+
+```toml
+[paths]
+duckdb = "/path/to/your/database.duckdb"
+manifest = "/path/to/your/dbt/target/manifest.json"
+corrections = "~/.mcp-memory/corrections.json"
+# popularity_db = "~/.mcp-memory/popularity.duckdb"
+
+[features]
+query = true
+corrections = true
+dbt = true
+popularity = true
+```
+
+Precedence: **env vars > config.toml > defaults**. You can mix both — use the config file for stable paths and env vars for overrides.
+
+### What you need
+
+| Component | Required? | Notes |
+|-----------|-----------|-------|
+| DuckDB database | Yes | Local `.duckdb` file or MotherDuck `md:` path |
+| dbt manifest | Recommended | Local file, URL, or `md:` table reference. Without it, `list_dbt_models` and `get_dbt_context` are disabled. |
+| corrections.json | No | Starts empty, grows via `save_correction` tool calls |
+| popularity seed | No | Popularity tracking auto-populates from real queries |
+
+### Without dbt
+
+If you don't use dbt, set `dbt = false` in config (or `MCP_MEMORY_DBT=false`). The server runs with just the query tool + corrections + popularity tracking. You can still save corrections about your schema and benefit from popularity-based join suggestions.
+
 ## Why a semantic/memory layer for MCP?
 
 MCP gives LLMs access to tools. But tools alone aren't enough — an LLM with `execute_query` and `list_tables` will still write bad SQL against an unfamiliar schema because:

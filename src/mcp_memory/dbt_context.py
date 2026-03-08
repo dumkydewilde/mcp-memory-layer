@@ -35,14 +35,19 @@ class ModelContext:
 class DbtManifest:
     """Parsed dbt manifest providing model context."""
 
-    def __init__(self, manifest_path: Path):
+    def __init__(self, manifest_path: Path | None = None, manifest_dict: dict | None = None):
         self.models: dict[str, ModelContext] = {}
         self._full_sql: dict[str, str] = {}  # untruncated SQL per model
-        if manifest_path.exists():
-            self._parse(manifest_path)
+        if manifest_dict:
+            self._parse_dict(manifest_dict)
+        elif manifest_path and manifest_path.exists():
+            self._parse_dict(json.loads(manifest_path.read_text()))
 
     def _parse(self, manifest_path: Path) -> None:
-        manifest = json.loads(manifest_path.read_text())
+        """Load and parse from file path (kept for backward compat)."""
+        self._parse_dict(json.loads(manifest_path.read_text()))
+
+    def _parse_dict(self, manifest: dict) -> None:
 
         for node_id, node in manifest.get("nodes", {}).items():
             if node.get("resource_type") not in ("model", "seed"):

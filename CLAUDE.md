@@ -43,3 +43,5 @@ uv run mcp-memory          # Run the MCP server
 - Ruff for linting (E, F, I, W rules, line-length 100)
 - Tests before new features
 - PRs: title < 80 chars, description < 5 sentences, no test plans unless requested
+
+@FP_CLAUDE.md
