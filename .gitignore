@@ -9,3 +9,9 @@ data/jaffle_shop/
 *.duckdb.wal
 eval/results/*.json
 .ruff_cache/
+
+# Fiberplane local issue tracking
+.fp/
+
+# Claude Code auto-memory
+.claude/

@@ -1,39 +1,33 @@
 """MCP server with memory layer: corrections, dbt context, and popularity tracking."""
 
-import os
-from pathlib import Path
-
 import duckdb
 from mcp.server.fastmcp import FastMCP
 
+from .config import load_config
 from .corrections import CorrectionsStore
 from .dbt_context import DbtManifest
+from .manifest_resolver import resolve_manifest
 from .popularity import PopularityTracker
 
-# Configuration from environment
-DATA_DIR = Path(os.environ.get("MCP_MEMORY_DATA_DIR", "data"))
-DUCKDB_PATH = Path(os.environ.get("MCP_MEMORY_DUCKDB_PATH", DATA_DIR / "jaffle_shop" / "jaffle_shop.duckdb"))
-MANIFEST_PATH = Path(os.environ.get("MCP_MEMORY_MANIFEST_PATH", Path(__file__).parent.parent.parent / "dbt_project" / "target" / "manifest.json"))
-CORRECTIONS_PATH = Path(os.environ.get("MCP_MEMORY_CORRECTIONS_PATH", DATA_DIR / "corrections.json"))
-POPULARITY_DB_PATH = Path(os.environ.get("MCP_MEMORY_POPULARITY_DB", DATA_DIR / "popularity.duckdb"))
-POPULARITY_SEED_PATH = Path(os.environ.get("MCP_MEMORY_POPULARITY_SEED", DATA_DIR / "popularity_seed.sql"))
-
-# Feature flags
-ENABLE_QUERY = os.environ.get("MCP_MEMORY_QUERY", "true").lower() == "true"
-ENABLE_CORRECTIONS = os.environ.get("MCP_MEMORY_CORRECTIONS", "true").lower() == "true"
-ENABLE_DBT = os.environ.get("MCP_MEMORY_DBT", "true").lower() == "true"
-ENABLE_POPULARITY = os.environ.get("MCP_MEMORY_POPULARITY", "true").lower() == "true"
+# Load configuration (env vars > config.toml > defaults)
+cfg = load_config()
 
 # Initialize stores
-corrections_store = CorrectionsStore(CORRECTIONS_PATH) if ENABLE_CORRECTIONS else None
-dbt_manifest = DbtManifest(MANIFEST_PATH) if ENABLE_DBT else None
-popularity_tracker = PopularityTracker(POPULARITY_DB_PATH) if ENABLE_POPULARITY else None
+corrections_store = CorrectionsStore(cfg.corrections_path) if cfg.enable_corrections else None
+
+# Resolve manifest from local file, URL, or MotherDuck table
+dbt_manifest = None
+if cfg.enable_dbt:
+    manifest_dict = resolve_manifest(cfg.manifest_source)
+    if manifest_dict:
+        dbt_manifest = DbtManifest(manifest_dict=manifest_dict)
+popularity_tracker = PopularityTracker(cfg.popularity_db_path) if cfg.enable_popularity else None
 
 # Seed popularity data if enabled and table is empty
-if popularity_tracker and POPULARITY_SEED_PATH.exists():
+if popularity_tracker and cfg.popularity_seed_path.exists():
     count = popularity_tracker.db.execute("SELECT count(*) FROM table_popularity").fetchone()
     if count and count[0] == 0:
-        popularity_tracker.seed(POPULARITY_SEED_PATH)
+        popularity_tracker.seed(cfg.popularity_seed_path)
 
 # Create MCP server
 mcp = FastMCP(
@@ -44,7 +38,7 @@ mcp = FastMCP(
 
 # --- Query tool ---
 
-if ENABLE_QUERY:
+if cfg.enable_query:
 
     @mcp.tool()
     def query(sql: str) -> str:
@@ -57,7 +51,7 @@ if ENABLE_QUERY:
             Query results as formatted text, or an error message.
         """
         try:
-            conn = duckdb.connect(str(DUCKDB_PATH), read_only=True)
+            conn = duckdb.connect(str(cfg.duckdb_path), read_only=True)
             result = conn.execute(sql)
             columns = [desc[0] for desc in result.description]
             rows = result.fetchall()
@@ -100,7 +94,7 @@ if ENABLE_QUERY:
 
 # --- Corrections tools ---
 
-if ENABLE_CORRECTIONS and corrections_store:
+if cfg.enable_corrections and corrections_store:
 
     @mcp.tool()
     def get_corrections(question: str, tables: list[str] | None = None) -> str:
@@ -140,7 +134,7 @@ if ENABLE_CORRECTIONS and corrections_store:
 
 # --- dbt context tools ---
 
-if ENABLE_DBT and dbt_manifest:
+if cfg.enable_dbt and dbt_manifest:
 
     @mcp.tool()
     def get_dbt_context(table_name: str) -> str:
@@ -185,7 +179,7 @@ if ENABLE_DBT and dbt_manifest:
 
 # --- Popularity tools ---
 
-if ENABLE_POPULARITY and popularity_tracker:
+if cfg.enable_popularity and popularity_tracker:
 
     @mcp.tool()
     def get_popular_context(tables: list[str] | None = None) -> str:
