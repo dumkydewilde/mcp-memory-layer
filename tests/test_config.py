@@ -68,18 +68,6 @@ manifest = "https://my-bucket.s3.amazonaws.com/manifest.json"
     assert cfg.manifest_source == "https://my-bucket.s3.amazonaws.com/manifest.json"
 
 
-def test_manifest_source_motherduck(clean_env, tmp_config_dir):
-    """Config preserves md: manifest sources as strings."""
-    tmp_config_dir.mkdir(parents=True)
-    config_file = tmp_config_dir / "config.toml"
-    config_file.write_text("""
-[paths]
-manifest = "md:analytics.meta.dbt_manifest"
-""")
-    cfg = load_config(config_file)
-    assert cfg.manifest_source == "md:analytics.meta.dbt_manifest"
-
-
 def test_env_vars_override_toml(clean_env, tmp_config_dir, monkeypatch):
     """Env vars take precedence over TOML values."""
     tmp_config_dir.mkdir(parents=True)

@@ -10,7 +10,6 @@ dependencies = [
     "pyyaml>=6.0",
     "anthropic>=0.40",
     "openai>=1.0",
-    "mcp-server-motherduck>=1.0",
     "click>=8.1",
 ]
 
@@ -21,7 +20,6 @@ dev = [
 
 [project.scripts]
 mcp-memory = "mcp_memory.server:main"
-mcp-memory-mdw = "mcp_memory.mdw_server:main"
 mcp-memory-cli = "mcp_memory.cli:cli"
 
 [build-system]

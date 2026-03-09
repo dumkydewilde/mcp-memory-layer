@@ -53,7 +53,7 @@ class TestExtractTablesFromSql:
         assert "events" in tables
 
     def test_qualified_table_name(self):
-        tables = extract_tables_from_sql("SELECT * FROM mdw.gtm.events")
+        tables = extract_tables_from_sql("SELECT * FROM analytics.reporting.events")
         assert "events" in tables
 
     def test_join(self):
@@ -95,7 +95,7 @@ class TestEnrichError:
 
     def test_column_error_with_qualified_name(self, manifest: DbtManifest):
         error = 'Referenced column "event_date" not found in FROM clause!'
-        sql = "SELECT event_date FROM mdw.gtm.events"
+        sql = "SELECT event_date FROM analytics.reporting.events"
         result = manifest.enrich_error(error, sql)
 
         assert "ts" in result
