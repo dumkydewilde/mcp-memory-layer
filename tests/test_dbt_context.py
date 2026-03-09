@@ -163,9 +163,43 @@ class TestListModels:
         assert "stg_orders" in result
         assert "raw_orders" in result
 
+    def test_shows_count_header(self, manifest: DbtManifest):
+        result = manifest.list_models()
+        assert "Showing 3 of 3 models" in result
+
     def test_empty_manifest(self, tmp_path: Path):
         dm = DbtManifest(tmp_path / "nope.json")
         assert dm.list_models() == "No dbt models loaded."
+
+    def test_search_by_name(self, manifest: DbtManifest):
+        result = manifest.list_models(search="order")
+        assert "stg_orders" in result
+        assert "raw_orders" in result
+        assert "customers" not in result
+        assert "matching 'order'" in result
+
+    def test_search_by_description(self, manifest: DbtManifest):
+        result = manifest.list_models(search="cents")
+        assert "stg_orders" in result
+        assert "customers" not in result
+
+    def test_search_by_column_name(self, manifest: DbtManifest):
+        result = manifest.list_models(search="lifetime_spend")
+        assert "customers" in result
+        assert "stg_orders" not in result
+
+    def test_search_case_insensitive(self, manifest: DbtManifest):
+        result = manifest.list_models(search="CUSTOMER")
+        assert "customers" in result
+
+    def test_search_multi_term(self, manifest: DbtManifest):
+        result = manifest.list_models(search="customer cents")
+        assert "customers" in result  # matches "customer" in name
+        assert "stg_orders" in result  # matches "cents" in description
+
+    def test_search_no_match(self, manifest: DbtManifest):
+        result = manifest.list_models(search="nonexistent_xyz")
+        assert result == "No models matching 'nonexistent_xyz'."
 
     def test_description_truncation(self, tmp_path: Path):
         manifest_data = {

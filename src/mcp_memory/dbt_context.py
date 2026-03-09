@@ -163,15 +163,39 @@ class DbtManifest:
             return error_msg + "\n\n**dbt context:**\n" + "\n".join(hints)
         return error_msg
 
-    def list_models(self) -> str:
-        """List all available dbt models with brief descriptions."""
+    def list_models(self, search: str | None = None) -> str:
+        """List dbt models, optionally filtered by keyword search.
+
+        Searches model name, description, and column names.
+        """
         if not self.models:
             return "No dbt models loaded."
 
+        models = sorted(self.models.values(), key=lambda m: m.name)
+
+        if search:
+            terms = search.lower().split()
+            models = [
+                m
+                for m in models
+                if any(
+                    term in m.name.lower()
+                    or term in m.description.lower()
+                    or any(term in col.lower() for col in m.columns)
+                    for term in terms
+                )
+            ]
+            if not models:
+                return f"No models matching '{search}'."
+
         lines = ["| Model | Type | Description |", "|-------|------|-------------|"]
-        for name, model in sorted(self.models.items()):
+        for model in models:
             desc = model.description
             if len(desc) > 60:
                 desc = desc[:60] + "..."
-            lines.append(f"| {name} | {model.materialized} | {desc} |")
-        return "\n".join(lines)
+            lines.append(f"| {model.name} | {model.materialized} | {desc} |")
+
+        header = f"Showing {len(models)} of {len(self.models)} models"
+        if search:
+            header += f" matching '{search}'"
+        return header + "\n\n" + "\n".join(lines)
