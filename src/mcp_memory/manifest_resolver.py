@@ -1,4 +1,4 @@
-"""Manifest resolver — fetches dbt manifest from local file, URL, or MotherDuck table."""
+"""Manifest resolver — fetches dbt manifest from local file or URL."""
 
 import json
 import logging
@@ -16,10 +16,9 @@ def resolve_manifest(source: str, cache_dir: Path = CACHE_DIR) -> dict | None:
     Supported sources:
         - Local file path: /path/to/manifest.json
         - HTTP(S) URL: https://bucket.s3.amazonaws.com/manifest.json
-        - MotherDuck table: md:<database>.<schema>.<table>
 
     Args:
-        source: Manifest source — file path, URL, or md: reference.
+        source: Manifest source — file path or URL.
         cache_dir: Directory for caching remote manifests.
 
     Returns:
@@ -29,8 +28,6 @@ def resolve_manifest(source: str, cache_dir: Path = CACHE_DIR) -> dict | None:
 
     if source.startswith(("http://", "https://")):
         return _resolve_url(source, cache_dir)
-    elif source.startswith("md:"):
-        return _resolve_motherduck(source, cache_dir)
     else:
         return _resolve_local(source)
 
@@ -81,45 +78,4 @@ def _resolve_url(url: str, cache_dir: Path) -> dict | None:
     cache_file.write_text(data.decode())
     cache_meta.write_text(json.dumps({"source": url, "fetched_at": time.time()}))
     logger.info("Cached manifest (%d nodes)", len(manifest.get("nodes", {})))
-    return manifest
-
-
-def _resolve_motherduck(source: str, cache_dir: Path) -> dict | None:
-    """Load manifest JSON from a MotherDuck table.
-
-    Source format: md:<database>.<schema>.<table>
-    Expects a table with a single JSON column, single row containing the manifest.
-    """
-    try:
-        import duckdb
-    except ImportError:
-        logger.warning("duckdb not installed, cannot resolve MotherDuck manifest")
-        return None
-
-    ref = source[3:]  # strip "md:"
-    cache_file = cache_dir / "manifest.json"
-    cache_meta = cache_dir / "manifest.meta.json"
-
-    logger.info("Loading manifest from MotherDuck table: %s", ref)
-    try:
-        conn = duckdb.connect("md:")
-        row = conn.execute(f"SELECT manifest FROM {ref} LIMIT 1").fetchone()
-        conn.close()
-    except Exception as e:
-        logger.warning("Failed to load manifest from MotherDuck: %s", e)
-        if cache_file.exists():
-            logger.info("Using stale cached manifest")
-            return json.loads(cache_file.read_text())
-        return None
-
-    if not row:
-        logger.warning("No manifest found in %s", ref)
-        return None
-
-    manifest = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-
-    # Cache it
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps(manifest))
-    cache_meta.write_text(json.dumps({"source": source, "fetched_at": time.time()}))
     return manifest

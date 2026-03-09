@@ -15,7 +15,7 @@ cfg = load_config()
 # Initialize stores
 corrections_store = CorrectionsStore(cfg.corrections_path) if cfg.enable_corrections else None
 
-# Resolve manifest from local file, URL, or MotherDuck table
+# Resolve manifest from local file or URL
 dbt_manifest = None
 if cfg.enable_dbt:
     manifest_dict = resolve_manifest(cfg.manifest_source)

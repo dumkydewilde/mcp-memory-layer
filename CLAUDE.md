@@ -8,6 +8,7 @@ An MCP server providing a memory layer (corrections, dbt context, popularity tra
 - **`src/mcp_memory/corrections.py`** — Stores corrections in `data/corrections.json` (human-readable, version-controlled)
 - **`src/mcp_memory/dbt_context.py`** — Parses dbt `manifest.json` into in-memory `DbtManifest`; tools return small, relevant slices to minimize token usage
 - **`src/mcp_memory/popularity.py`** — Tracks query patterns (tables, joins, columns) in a DuckDB database; seeded from `data/popularity_seed.sql`
+- **`src/mcp_memory/manifest_resolver.py`** — Resolves dbt manifest from local file or HTTP URL with caching
 - **`data/`** — Contains corrections.json, popularity_seed.sql, and jaffle_shop project data
 - **`eval/`** — Evaluation framework for A/B testing memory features
 - **`tests/`** — Unit and integration tests
@@ -17,6 +18,7 @@ An MCP server providing a memory layer (corrections, dbt context, popularity tra
 - Python >= 3.11, managed with `uv`
 - SQL parsing: `sqlglot` with `dialect="duckdb"` throughout
 - DuckDB quirk: In `ON CONFLICT DO UPDATE SET` clauses, use `now()` not `current_timestamp` for TIMESTAMP columns (gets misinterpreted as column reference)
+- Manifest resolution: local file path or HTTP URL with local caching (1-hour TTL)
 - Feature flags via env vars: `MCP_MEMORY_CORRECTIONS`, `MCP_MEMORY_DBT`, `MCP_MEMORY_POPULARITY` (all default `true`)
 - All config paths are env-var configurable (`MCP_MEMORY_DATA_DIR`, `MCP_MEMORY_DUCKDB_PATH`, etc.)
 

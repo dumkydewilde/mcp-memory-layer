@@ -2,6 +2,8 @@
 
 An [MCP](https://modelcontextprotocol.io/) server that wraps a DuckDB/dbt data warehouse with a **memory layer** — corrections, dbt model context, and query popularity tracking — so LLMs write better SQL on the first try.
 
+Comes with a ready-to-run **jaffle_shop** example and an **evaluation framework** for A/B testing memory features.
+
 ## The problem
 
 LLMs generating SQL against a data warehouse hit the same mistakes over and over:
@@ -53,17 +55,40 @@ orders: queried 47 times
 
 This steers the LLM toward proven patterns instead of inventing joins from scratch.
 
-## Two server modes
+## Quick start
 
-### Standalone (`mcp-memory`)
+The repo includes a complete jaffle_shop example — a DuckDB database with dbt models, pre-seeded corrections, and popularity data.
 
-A self-contained MCP server with its own `query` tool for executing SQL against a local DuckDB file. Good for development and evaluation.
+```bash
+uv sync
+uv run mcp-memory
+```
 
-### MotherDuck wrapper (`mcp-memory-mdw`)
+### Claude Desktop configuration
 
-Wraps the official [mcp-server-motherduck](https://pypi.org/project/mcp-server-motherduck/) — inheriting its `execute_query`, `list_tables`, etc. — and registers memory layer tools on top. Also patches the base tool descriptions to steer the LLM toward `get_dbt_context` over raw `list_columns`.
+```json
+{
+  "mcpServers": {
+    "memory-layer": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/mcp-memory-layer", "mcp-memory"]
+    }
+  }
+}
+```
 
-This is the production mode: point it at your MotherDuck database and dbt manifest, and any MCP client (Claude Desktop, Cursor, etc.) gets the memory layer automatically.
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCP_MEMORY_DATA_DIR` | `data/` | Base directory for data files |
+| `MCP_MEMORY_DUCKDB_PATH` | `data/jaffle_shop/jaffle_shop.duckdb` | DuckDB database path |
+| `MCP_MEMORY_MANIFEST_PATH` | `dbt_project/target/manifest.json` | dbt manifest.json path |
+| `MCP_MEMORY_CORRECTIONS_PATH` | `data/corrections.json` | Corrections JSON path |
+| `MCP_MEMORY_POPULARITY_DB` | `data/popularity.duckdb` | Popularity tracking database |
+| `MCP_MEMORY_CORRECTIONS` | `true` | Enable/disable corrections |
+| `MCP_MEMORY_DBT` | `true` | Enable/disable dbt context |
+| `MCP_MEMORY_POPULARITY` | `true` | Enable/disable popularity tracking |
 
 ## Evaluation framework
 
@@ -81,45 +106,6 @@ uv run python -m eval.report eval/results/baseline.json eval/results/all_feature
 Configurations: `baseline`, `corrections`, `dbt`, `popularity`, `all_features`
 
 Questions include "dead-end traps" — stale tables that look correct but produce wrong results. These specifically test whether corrections can prevent the LLM from falling into schema traps.
-
-## Quick start
-
-```bash
-uv sync
-uv run mcp-memory          # standalone mode
-uv run mcp-memory-mdw      # MotherDuck wrapper mode
-```
-
-### Claude Desktop configuration
-
-```json
-{
-  "mcpServers": {
-    "my-warehouse": {
-      "command": "uv",
-      "args": ["run", "mcp-memory-mdw", "--read-write"],
-      "env": {
-        "MOTHERDUCK_TOKEN": "your_token",
-        "MCP_MEMORY_MANIFEST_PATH": "/path/to/dbt/target/manifest.json",
-        "MCP_MEMORY_CORRECTIONS_PATH": "/path/to/corrections.json"
-      }
-    }
-  }
-}
-```
-
-### Environment variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `MCP_MEMORY_DATA_DIR` | `data/` | Base directory for data files |
-| `MCP_MEMORY_DUCKDB_PATH` | `data/jaffle_shop/jaffle_shop.duckdb` | DuckDB database path (standalone mode) |
-| `MCP_MEMORY_MANIFEST_PATH` | `dbt_project/target/manifest.json` | dbt manifest.json path |
-| `MCP_MEMORY_CORRECTIONS_PATH` | `data/corrections.json` | Corrections JSON path |
-| `MCP_MEMORY_POPULARITY_DB` | `data/popularity.duckdb` | Popularity tracking database |
-| `MCP_MEMORY_CORRECTIONS` | `true` | Enable/disable corrections |
-| `MCP_MEMORY_DBT` | `true` | Enable/disable dbt context |
-| `MCP_MEMORY_POPULARITY` | `true` | Enable/disable popularity tracking |
 
 ## Bring your own project
 
@@ -155,21 +141,11 @@ manifest = "/path/to/your/dbt/target/manifest.json"
 
 # URL — S3 presigned URL, GCS signed URL, or any HTTP endpoint
 manifest = "https://my-bucket.s3.amazonaws.com/dbt/manifest.json"
-
-# MotherDuck table — manifest JSON stored in a table column
-manifest = "md:my_db.meta.dbt_manifest"
 ```
 
 **Local file** is the simplest: run `dbt compile` (or `dbt build`) and point to `target/manifest.json`.
 
 **URL** is useful for teams: upload the manifest to a shared bucket as part of your dbt CI/CD pipeline (e.g. `dbt build && aws s3 cp target/manifest.json s3://...`). The server caches fetched manifests locally and re-fetches when the cache is older than 1 hour.
-
-**MotherDuck table** stores the manifest in a column named `manifest` (as a JSON string). This keeps everything in one place if you're already using MotherDuck for your warehouse. Example setup:
-
-```sql
-CREATE TABLE IF NOT EXISTS meta.dbt_manifest (manifest JSON);
--- In your CI: TRUNCATE meta.dbt_manifest; INSERT INTO meta.dbt_manifest VALUES (?);
-```
 
 ### Config file
 
@@ -195,8 +171,8 @@ Precedence: **env vars > config.toml > defaults**. You can mix both — use the 
 
 | Component | Required? | Notes |
 |-----------|-----------|-------|
-| DuckDB database | Yes | Local `.duckdb` file or MotherDuck `md:` path |
-| dbt manifest | Recommended | Local file, URL, or `md:` table reference. Without it, `list_dbt_models` and `get_dbt_context` are disabled. |
+| DuckDB database | Yes | Local `.duckdb` file |
+| dbt manifest | Recommended | Local file or URL. Without it, `list_dbt_models` and `get_dbt_context` are disabled. |
 | corrections.json | No | Starts empty, grows via `save_correction` tool calls |
 | popularity seed | No | Popularity tracking auto-populates from real queries |
 
