@@ -166,15 +166,19 @@ if cfg.enable_dbt and dbt_manifest:
         return dbt_manifest.get_model_sql(table_name)
 
     @mcp.tool()
-    def list_dbt_models() -> str:
+    def list_dbt_models(search: str | None = None) -> str:
         """List all available dbt models with brief descriptions.
 
         Call this to discover which tables are available.
+        Pass a search keyword to filter by model name, description, or column names.
+
+        Args:
+            search: Optional keyword to filter models by name, description, or column names.
 
         Returns:
             Table of model names, materializations, and descriptions.
         """
-        return dbt_manifest.list_models()
+        return dbt_manifest.list_models(search)
 
 
 # --- Popularity tools ---
