@@ -136,13 +136,22 @@ class TestGetContext:
         assert "customer_id" in result
         assert "Upstream:" in result
 
-    def test_includes_sql(self, manifest: DbtManifest):
+    def test_includes_chaining_hint(self, manifest: DbtManifest):
         result = manifest.get_context("customers")
-        assert "```sql" in result
+        assert "get_model_sql" in result
 
     def test_includes_tests(self, manifest: DbtManifest):
         result = manifest.get_context("customers")
         assert "not_null" in result
+
+    def test_includes_downstream(self, manifest: DbtManifest):
+        result = manifest.get_context("raw_orders")
+        assert "Downstream:" in result
+        assert "stg_orders" in result
+
+    def test_no_downstream_when_leaf(self, manifest: DbtManifest):
+        result = manifest.get_context("customers")
+        assert "Downstream:" not in result
 
     def test_missing_model_with_suggestion(self, manifest: DbtManifest):
         result = manifest.get_context("customer")  # close match
