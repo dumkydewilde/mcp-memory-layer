@@ -97,15 +97,47 @@ class DbtManifest:
                 if parent in self._children:
                     self._children[parent].append(model.name)
 
+    def _resolve_model_name(self, table_name: str) -> str | None:
+        """Resolve a table reference to a dbt model name.
+
+        Handles fully qualified names (db.schema.table), schema-qualified (schema.table),
+        and plain model names.
+        """
+        # Direct match first
+        if table_name in self.models:
+            return table_name
+
+        # Strip database/schema prefixes: "db.schema.table" -> "table"
+        short_name = table_name.rsplit(".", 1)[-1]
+        if short_name in self.models:
+            return short_name
+
+        # Case-insensitive match
+        lower = short_name.lower()
+        for name in self.models:
+            if name.lower() == lower:
+                return name
+
+        return None
+
     def get_context(self, table_name: str) -> str:
         """Get dbt model context for a table."""
-        if table_name not in self.models:
-            close = [m for m in self.models if table_name.lower() in m.lower()]
+        resolved = self._resolve_model_name(table_name)
+        if not resolved:
+            short_name = table_name.rsplit(".", 1)[-1]
+            close = [m for m in self.models if short_name.lower() in m.lower()]
             if close:
-                return f"Model '{table_name}' not found. Did you mean: {', '.join(close)}?"
-            return f"Model '{table_name}' not found in dbt manifest."
+                return (
+                    f"Model '{table_name}' not found. Did you mean: {', '.join(close)}?\n"
+                    f"Tip: Use just the model name (e.g., '{close[0]}'), "
+                    f"not the fully qualified SQL name."
+                )
+            return (
+                f"Model '{table_name}' not found in dbt manifest. "
+                f"Use list_dbt_models to find available model names."
+            )
 
-        model = self.models[table_name]
+        model = self.models[resolved]
         parts = [f"## {model.name} ({model.materialized})"]
 
         if model.description:
@@ -119,7 +151,7 @@ class DbtManifest:
         if model.depends_on:
             parts.append(f"\n### Upstream: {' → '.join(model.depends_on)} → {model.name}")
 
-        children = self._children.get(table_name, [])
+        children = self._children.get(resolved, [])
         if children:
             parts.append(f"\n### Downstream: {model.name} → {', '.join(children)}")
 
@@ -134,13 +166,22 @@ class DbtManifest:
 
     def get_model_sql(self, table_name: str) -> str:
         """Get the full raw SQL for a dbt model."""
-        if table_name not in self.models:
-            close = [m for m in self.models if table_name.lower() in m.lower()]
+        resolved = self._resolve_model_name(table_name)
+        if not resolved:
+            short_name = table_name.rsplit(".", 1)[-1]
+            close = [m for m in self.models if short_name.lower() in m.lower()]
             if close:
-                return f"Model '{table_name}' not found. Did you mean: {', '.join(close)}?"
-            return f"Model '{table_name}' not found in dbt manifest."
+                return (
+                    f"Model '{table_name}' not found. Did you mean: {', '.join(close)}?\n"
+                    f"Tip: Use just the model name (e.g., '{close[0]}'), "
+                    f"not the fully qualified SQL name."
+                )
+            return (
+                f"Model '{table_name}' not found in dbt manifest. "
+                f"Use list_dbt_models to find available model names."
+            )
 
-        sql = self._full_sql.get(table_name, "")
+        sql = self._full_sql.get(resolved, "")
         if not sql:
             return f"No SQL available for '{table_name}' (may be a seed or external source)."
 
@@ -211,4 +252,10 @@ class DbtManifest:
         header = f"Showing {len(models)} of {len(self.models)} models"
         if search:
             header += f" matching '{search}'"
-        return header + "\n\n" + "\n".join(lines)
+        first_model = models[0].name if models else "my_model"
+        footer = (
+            f"\n\nUse get_dbt_context with the **Model** name above (e.g., '{first_model}') "
+            f"to get columns and lineage. Note: dbt model names are NOT fully qualified — "
+            f"use '{first_model}', not 'mydb.main.{first_model}'."
+        )
+        return header + "\n\n" + "\n".join(lines) + footer

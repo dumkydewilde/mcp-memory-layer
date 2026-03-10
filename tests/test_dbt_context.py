@@ -163,6 +163,21 @@ class TestGetContext:
         assert "not found" in result
         assert "Did you mean" not in result
 
+    def test_qualified_name_strips_prefix(self, manifest: DbtManifest):
+        """Fully qualified SQL names like db.schema.table should resolve to the model."""
+        result = manifest.get_context("mydb.main.customers")
+        assert "## customers (table)" in result
+
+    def test_schema_qualified_name(self, manifest: DbtManifest):
+        """schema.table should also resolve."""
+        result = manifest.get_context("main.customers")
+        assert "## customers (table)" in result
+
+    def test_qualified_name_not_found_suggests(self, manifest: DbtManifest):
+        result = manifest.get_context("mydb.main.customer")
+        assert "Did you mean" in result
+        assert "not the fully qualified SQL name" in result
+
 
 class TestListModels:
     def test_returns_table(self, manifest: DbtManifest):

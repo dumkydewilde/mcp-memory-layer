@@ -153,8 +153,12 @@ if cfg.enable_dbt and dbt_manifest:
         Call this BEFORE querying when a user names a specific model, schema, or table.
         Use the dbt model instead of raw tables whenever one exists.
 
+        IMPORTANT: Use the short dbt model name (e.g., 'customers', 'orders'), NOT the
+        fully qualified SQL name (e.g., 'mydb.main.customers'). dbt models are identified
+        by their model name only. Use list_dbt_models first to find available model names.
+
         Args:
-            table_name: Name of the model/table to look up.
+            table_name: Short dbt model name (e.g., 'customers', not 'mydb.main.customers').
 
         Returns:
             Formatted context about the model, or suggestions if not found.
@@ -168,8 +172,11 @@ if cfg.enable_dbt and dbt_manifest:
         Use this when you need to understand the exact transformations, column
         renames, CASE statements, or business logic in a model's SQL.
 
+        IMPORTANT: Use the short dbt model name (e.g., 'orders'), NOT the
+        fully qualified SQL name. Use list_dbt_models to find available names.
+
         Args:
-            table_name: Name of the model to get SQL for.
+            table_name: Short dbt model name (e.g., 'orders', not 'mydb.main.orders').
 
         Returns:
             The complete SQL source code of the model.
