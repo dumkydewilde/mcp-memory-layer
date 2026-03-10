@@ -32,7 +32,13 @@ if popularity_tracker and cfg.popularity_seed_path.exists():
 # Create MCP server
 mcp = FastMCP(
     "mcp-memory",
-    instructions="MCP server with memory layer for better text-to-SQL",
+    instructions=(
+        "MCP memory layer for text-to-SQL. Required workflow for every data question: "
+        "1) get_corrections with the user's question, "
+        "2) list_dbt_models to find relevant models, then get_dbt_context for each, "
+        "3) query using dbt models (not raw tables) with fully qualified names (db.schema.table), "
+        "4) save_correction if you discover something non-obvious about the schema."
+    ),
 )
 
 
@@ -43,6 +49,10 @@ if cfg.enable_query:
     @mcp.tool()
     def query(sql: str) -> str:
         """Execute a SQL query against the DuckDB database.
+
+        Always call get_corrections and get_dbt_context BEFORE writing the query.
+        Prefer querying dbt models over raw tables when they exist.
+        Always use fully qualified names (database.schema.table).
 
         Args:
             sql: The SQL query to execute (DuckDB dialect).
@@ -138,9 +148,10 @@ if cfg.enable_dbt and dbt_manifest:
 
     @mcp.tool()
     def get_dbt_context(table_name: str) -> str:
-        """Get dbt model context for a table: description, columns, lineage, tests.
+        """Get dbt model definition, columns, lineage, and tests for a specific model or table.
 
-        Call this to understand what a table contains and how it relates to other tables.
+        Call this BEFORE querying when a user names a specific model, schema, or table.
+        Use the dbt model instead of raw tables whenever one exists.
 
         Args:
             table_name: Name of the model/table to look up.
@@ -167,10 +178,10 @@ if cfg.enable_dbt and dbt_manifest:
 
     @mcp.tool()
     def list_dbt_models(search: str | None = None) -> str:
-        """List all available dbt models with brief descriptions.
+        """List all dbt models, tables, and metrics with their schema.
 
-        Call this to discover which tables are available.
-        Pass a search keyword to filter by model name, description, or column names.
+        Call this FIRST when a user references 'models', a schema name,
+        or asks what data is available. Pass a search keyword to filter results.
 
         Args:
             search: Optional keyword to filter models by name, description, or column names.

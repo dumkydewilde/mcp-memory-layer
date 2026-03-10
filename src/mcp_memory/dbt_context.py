@@ -38,6 +38,7 @@ class DbtManifest:
     def __init__(self, manifest_path: Path | None = None, manifest_dict: dict | None = None):
         self.models: dict[str, ModelContext] = {}
         self._full_sql: dict[str, str] = {}  # untruncated SQL per model
+        self._children: dict[str, list[str]] = {}  # model_name -> downstream model names
         if manifest_dict:
             self._parse_dict(manifest_dict)
         elif manifest_path and manifest_path.exists():
@@ -89,6 +90,13 @@ class DbtManifest:
                     test_desc = node.get("test_metadata", {}).get("name", node.get("name", ""))
                     self.models[model_name].tests.append(test_desc)
 
+        # Build downstream (children) index by inverting depends_on
+        self._children = {name: [] for name in self.models}
+        for model in self.models.values():
+            for parent in model.depends_on:
+                if parent in self._children:
+                    self._children[parent].append(model.name)
+
     def get_context(self, table_name: str) -> str:
         """Get dbt model context for a table."""
         if table_name not in self.models:
@@ -111,11 +119,16 @@ class DbtManifest:
         if model.depends_on:
             parts.append(f"\n### Upstream: {' → '.join(model.depends_on)} → {model.name}")
 
-        if model.tests:
-            parts.append(f"\n### Tests: {', '.join(model.tests)}")
+        children = self._children.get(table_name, [])
+        if children:
+            parts.append(f"\n### Downstream: {model.name} → {', '.join(children)}")
 
-        if model.raw_sql:
-            parts.append(f"\n### SQL\n```sql\n{model.raw_sql}\n```")
+        if model.tests:
+            parts.append(f"\nTests: {', '.join(model.tests)}")
+
+        parts.append(
+            "\n---\nCall `get_model_sql` to see the full SQL transformations for this model."
+        )
 
         return "\n".join(parts)
 
