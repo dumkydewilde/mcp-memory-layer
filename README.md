@@ -1,6 +1,6 @@
 # MCP Memory Layer for Text-to-SQL
 
-An [MCP](https://modelcontextprotocol.io/) server that wraps a DuckDB/dbt data warehouse with a **memory layer** — corrections, dbt model context, and query popularity tracking — so LLMs write better SQL on the first try.
+An [MCP](https://modelcontextprotocol.io/) server that wraps a DuckDB/MotherDuck data warehouse with a **memory layer** — corrections, dbt model context, and query popularity tracking — so LLMs write better SQL on the first try.
 
 Comes with a ready-to-run **jaffle_shop** example and an **evaluation framework** for A/B testing memory features.
 
