@@ -1,7 +1,7 @@
 """Configuration loader — reads from config.toml, env vars, or defaults."""
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 try:
@@ -22,6 +22,10 @@ class Config:
     corrections_path: Path = Path("data/corrections.json")
     popularity_db_path: Path = Path("data/popularity.duckdb")
     popularity_seed_path: Path = Path("data/popularity_seed.sql")
+    motherduck_mcp_url: str | None = None
+    motherduck_token: str | None = None
+    motherduck_headers: dict[str, str] = field(default_factory=dict)
+    enable_motherduck_query_rw: bool = False
 
     enable_query: bool = True
     enable_corrections: bool = True
@@ -54,6 +58,7 @@ def load_config(config_path: Path | None = None) -> Config:
 
         paths = toml.get("paths", {})
         features = toml.get("features", {})
+        motherduck = toml.get("motherduck", {})
 
         if "duckdb" in paths:
             cfg.duckdb_path = Path(paths["duckdb"])
@@ -65,6 +70,12 @@ def load_config(config_path: Path | None = None) -> Config:
             cfg.popularity_db_path = Path(paths["popularity_db"])
         if "popularity_seed" in paths:
             cfg.popularity_seed_path = Path(paths["popularity_seed"])
+        if "mcp_url" in motherduck:
+            cfg.motherduck_mcp_url = motherduck["mcp_url"]
+        if "token" in motherduck:
+            cfg.motherduck_token = motherduck["token"]
+        if "headers" in motherduck:
+            cfg.motherduck_headers = dict(motherduck["headers"])
 
         if "query" in features:
             cfg.enable_query = features["query"]
@@ -74,6 +85,8 @@ def load_config(config_path: Path | None = None) -> Config:
             cfg.enable_dbt = features["dbt"]
         if "popularity" in features:
             cfg.enable_popularity = features["popularity"]
+        if "motherduck_query_rw" in features:
+            cfg.enable_motherduck_query_rw = features["motherduck_query_rw"]
 
     # 2. Env vars override config.toml
     data_dir = os.environ.get("MCP_MEMORY_DATA_DIR")
@@ -101,13 +114,26 @@ def load_config(config_path: Path | None = None) -> Config:
     elif data_dir:
         cfg.popularity_seed_path = Path(data_dir) / "popularity_seed.sql"
 
+    if v := os.environ.get("MCP_MEMORY_MOTHERDUCK_MCP_URL"):
+        cfg.motherduck_mcp_url = v
+
+    if v := os.environ.get("MCP_MEMORY_MOTHERDUCK_TOKEN"):
+        cfg.motherduck_token = v
+
+    if v := os.environ.get("MCP_MEMORY_MOTHERDUCK_AUTH_HEADER"):
+        cfg.motherduck_headers["Authorization"] = v
+
     for env_key, attr in [
         ("MCP_MEMORY_QUERY", "enable_query"),
         ("MCP_MEMORY_CORRECTIONS", "enable_corrections"),
         ("MCP_MEMORY_DBT", "enable_dbt"),
         ("MCP_MEMORY_POPULARITY", "enable_popularity"),
+        ("MCP_MEMORY_MOTHERDUCK_QUERY_RW", "enable_motherduck_query_rw"),
     ]:
         if v := os.environ.get(env_key):
             setattr(cfg, attr, v.lower() == "true")
+
+    if cfg.motherduck_token and "Authorization" not in cfg.motherduck_headers:
+        cfg.motherduck_headers["Authorization"] = f"Bearer {cfg.motherduck_token}"
 
     return cfg
