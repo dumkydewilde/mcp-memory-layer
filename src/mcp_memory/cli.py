@@ -22,6 +22,12 @@ query = true
 corrections = true
 dbt = true
 popularity = true
+# motherduck_query_rw = false
+
+[motherduck]
+# Optional: wrap the hosted MotherDuck MCP instead of querying a local DuckDB file.
+# mcp_url = "https://api.motherduck.com/mcp"
+# token = "md_your_access_or_read_scaling_token"
 """
 
 EMPTY_CORRECTIONS = {"version": 1, "corrections": []}

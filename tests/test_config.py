@@ -1,12 +1,11 @@
 """Tests for config loading and CLI init command."""
 
-import json
 import os
 from pathlib import Path
 
 import pytest
 
-from mcp_memory.config import Config, load_config
+from mcp_memory.config import load_config
 
 
 @pytest.fixture
@@ -98,3 +97,43 @@ def test_feature_flag_env_override(clean_env, tmp_path, monkeypatch):
     cfg = load_config()
     assert cfg.enable_dbt is False
     assert cfg.enable_corrections is True
+
+
+def test_motherduck_config_from_toml(clean_env, tmp_config_dir):
+    """MotherDuck remote MCP settings load from TOML."""
+    tmp_config_dir.mkdir(parents=True)
+    config_file = tmp_config_dir / "config.toml"
+    config_file.write_text("""
+[motherduck]
+mcp_url = "https://api.motherduck.com/mcp"
+token = "secret-token"
+
+[features]
+motherduck_query_rw = true
+""")
+
+    cfg = load_config(config_file)
+    assert cfg.motherduck_mcp_url == "https://api.motherduck.com/mcp"
+    assert cfg.motherduck_token == "secret-token"
+    assert cfg.motherduck_headers["Authorization"] == "Bearer secret-token"
+    assert cfg.enable_motherduck_query_rw is True
+
+
+def test_motherduck_env_vars_override_toml(clean_env, tmp_config_dir, monkeypatch):
+    """MotherDuck env vars override TOML values."""
+    tmp_config_dir.mkdir(parents=True)
+    config_file = tmp_config_dir / "config.toml"
+    config_file.write_text("""
+[motherduck]
+mcp_url = "https://example.com/mcp"
+token = "toml-token"
+""")
+
+    monkeypatch.setenv("MCP_MEMORY_MOTHERDUCK_MCP_URL", "https://api.motherduck.com/mcp")
+    monkeypatch.setenv("MCP_MEMORY_MOTHERDUCK_AUTH_HEADER", "Bearer env-token")
+    monkeypatch.setenv("MCP_MEMORY_MOTHERDUCK_QUERY_RW", "true")
+    cfg = load_config(config_file)
+
+    assert cfg.motherduck_mcp_url == "https://api.motherduck.com/mcp"
+    assert cfg.motherduck_headers["Authorization"] == "Bearer env-token"
+    assert cfg.enable_motherduck_query_rw is True

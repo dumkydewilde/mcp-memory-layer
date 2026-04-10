@@ -86,9 +86,13 @@ uv run mcp-memory
 | `MCP_MEMORY_MANIFEST_PATH` | `dbt_project/target/manifest.json` | dbt manifest.json path |
 | `MCP_MEMORY_CORRECTIONS_PATH` | `data/corrections.json` | Corrections JSON path |
 | `MCP_MEMORY_POPULARITY_DB` | `data/popularity.duckdb` | Popularity tracking database |
+| `MCP_MEMORY_MOTHERDUCK_MCP_URL` | unset | Hosted MotherDuck MCP URL, e.g. `https://api.motherduck.com/mcp` |
+| `MCP_MEMORY_MOTHERDUCK_TOKEN` | unset | MotherDuck access token or read scaling token |
+| `MCP_MEMORY_MOTHERDUCK_AUTH_HEADER` | unset | Full `Authorization` header if you don't want `Bearer <token>` generated |
 | `MCP_MEMORY_CORRECTIONS` | `true` | Enable/disable corrections |
 | `MCP_MEMORY_DBT` | `true` | Enable/disable dbt context |
 | `MCP_MEMORY_POPULARITY` | `true` | Enable/disable popularity tracking |
+| `MCP_MEMORY_MOTHERDUCK_QUERY_RW` | `false` | Expose MotherDuck `query_rw` through this wrapper |
 
 ## Evaluation framework
 
@@ -130,6 +134,36 @@ Then run the server:
 mcp-memory    # reads config from ~/.mcp-memory/config.toml
 ```
 
+### Wrapping the hosted MotherDuck MCP
+
+If you want this server to sit in front of the hosted MotherDuck MCP instead of opening a local DuckDB file, configure a MotherDuck section and keep the memory features enabled locally:
+
+```toml
+[motherduck]
+mcp_url = "https://api.motherduck.com/mcp"
+
+[features]
+query = true
+corrections = true
+dbt = true
+popularity = true
+# motherduck_query_rw = false
+```
+
+For authentication, set one of:
+
+```bash
+export MCP_MEMORY_MOTHERDUCK_TOKEN="<motherduck token>"
+# or
+export MCP_MEMORY_MOTHERDUCK_AUTH_HEADER="Bearer <motherduck token>"
+```
+
+With `mcp_url` configured, this server exposes MotherDuck-backed `query`, `list_databases`, `list_tables`, `list_columns`, `search_catalog`, and `ask_docs_question`, while still applying local corrections, dbt context, and popularity tracking around those calls. It also discovers and auto-registers additional upstream MotherDuck tools such as `list_shares` and Dive APIs, skipping only the core tools that this server already wraps directly.
+
+For debugging discovery in a client like Claude Desktop, use:
+- `get_motherduck_wrapper_status` — show startup discovery status, counts, and any discovery error
+- `list_upstream_motherduck_tools` — list the upstream MotherDuck tools the wrapper can currently see; pass `refresh=true` to re-fetch live
+
 ### Connecting your dbt manifest
 
 The `manifest` path supports multiple sources. The server resolves the manifest on startup:
@@ -163,6 +197,11 @@ query = true
 corrections = true
 dbt = true
 popularity = true
+# motherduck_query_rw = false
+
+[motherduck]
+# mcp_url = "https://api.motherduck.com/mcp"
+# token = "md_your_access_token"
 ```
 
 Precedence: **env vars > config.toml > defaults**. You can mix both — use the config file for stable paths and env vars for overrides.
